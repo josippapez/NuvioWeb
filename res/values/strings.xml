@@ -186,7 +186,7 @@
     <string name="account_stat_progress">progress</string>
     <string name="account_stat_watched">watched</string>
     <string name="settings_integrations_section">Integrations</string>
-    <string name="settings_integrations_section_subtitle">Choose Debrid, TMDB, or MDBList</string>
+    <string name="settings_integrations_section_subtitle">Choose TMDB or MDBList</string>
     <string name="settings_tmdb_subtitle">Metadata enrichment controls</string>
     <string name="settings_mdblist_subtitle">External ratings providers</string>
     <string name="settings_animeskip_subtitle">Anime intro/outro skip timestamps</string>
@@ -536,6 +536,7 @@
     <string name="qr_login_approved">Login approved. Finishing sign in…</string>
     <string name="qr_login_pending">Waiting for approval on your phone…</string>
     <string name="qr_login_expired">QR login expired. Generate a new code.</string>
+    <string name="qr_login_scan_prompt">Scan QR and sign in on your phone</string>
     <string name="trakt_code_expires">Code expires in %1$s</string>
     <string name="trakt_token_refreshes">Trakt access token refreshes in %1$s</string>
     <string name="trakt_login_instruction">Press Login to start Trakt device authentication. A QR code will appear here.</string>
@@ -807,24 +808,19 @@
     <string name="search_voice_unavailable">Voice search is unavailable on this device.</string>
 
     <!-- LibraryScreen -->
-    <string name="library_syncing">Syncing library…</string>
+    <string name="library_syncing">Syncing Trakt library…</string>
     <string name="library_title">Library</string>
     <string name="library_filter_list">List</string>
     <string name="library_filter_type">Type</string>
     <string name="library_filter_sort">Sort</string>
-    <string name="library_sort_trakt_order">List Order</string>
+    <string name="library_sort_trakt_order">Trakt Order</string>
     <string name="library_sort_added_desc">Added ↓</string>
     <string name="library_sort_added_asc">Added ↑</string>
     <string name="library_sort_title_asc">Title A-Z</string>
     <string name="library_sort_title_desc">Title Z-A</string>
     <string name="library_manage_lists">Manage Lists</string>
-    <string name="library_manage_trakt_lists">Manage Lists</string>
-    <string name="library_action_sync">Sync</string>
-    <string name="library_action_syncing">Syncing...</string>
-    <string name="library_action_saving">Saving...</string>
+    <string name="library_manage_trakt_lists">Manage Trakt Lists</string>
     <string name="library_no_lists">No personal lists yet.</string>
-    <string name="library_create_title">Create List</string>
-    <string name="library_edit_title">Edit List</string>
     <string name="library_list_create">Create</string>
     <string name="library_list_edit">Edit</string>
     <string name="library_list_move_up">Move Up</string>
@@ -834,12 +830,8 @@
     <string name="library_list_name_label">Name</string>
     <string name="library_list_description_label">Description</string>
     <string name="library_list_privacy">Privacy</string>
-    <string name="library_privacy_private">Private</string>
-    <string name="library_privacy_link">Link</string>
-    <string name="library_privacy_friends">Friends</string>
-    <string name="library_privacy_public">Public</string>
     <string name="library_delete_title">Delete this list?</string>
-    <string name="library_delete_subtitle">This removes the list and all its items.</string>
+    <string name="library_delete_subtitle">This removes the list and all list items from Trakt.</string>
     <string name="library_delete_confirm">Delete</string>
     <string name="library_source_local">LOCAL</string>
     <string name="library_type_all">All</string>
@@ -848,17 +840,6 @@
     <string name="library_empty_trakt_title">No %1$s in this list</string>
     <string name="library_empty_local_subtitle">Start saving your favorites to see them here</string>
     <string name="library_empty_trakt_subtitle">Use + in details to add items to watchlist or lists</string>
-    <string name="library_untitled">Untitled</string>
-    <string name="library_error_name_required">List name is required</string>
-    <string name="library_error_save_failed">Failed to save list</string>
-    <string name="library_error_delete_failed">Failed to delete list</string>
-    <string name="library_error_reorder_failed">Failed to reorder lists</string>
-    <string name="library_error_refresh_failed">Failed to refresh library</string>
-    <string name="library_message_list_created">List created</string>
-    <string name="library_message_list_updated">List updated</string>
-    <string name="library_message_list_deleted">List deleted</string>
-    <string name="library_message_list_order_updated">List order updated</string>
-    <string name="library_message_synced">Library synced</string>
 
     <!-- AccountSettingsContent -->
     <string name="account_loading">Loading…</string>
@@ -894,6 +875,7 @@
     <string name="auth_qr_please_wait">Please wait…</string>
     <string name="auth_qr_continue">Continue</string>
     <string name="auth_qr_back">Back</string>
+    <string name="cd_qr_login">QR code</string>
 
     <!-- SyncCodeGenerateScreen -->
     <string name="sync_generate_title">Generate Sync Code</string>
@@ -954,7 +936,6 @@
     <string name="cast_detail_error">Something went wrong</string>
     <string name="cast_detail_retry">Retry</string>
     <string name="cast_detail_filmography">Filmography</string>
-    <string name="cast_detail_known_for">Known For</string>
 
     <!-- CatalogSeeAllScreen -->
     <string name="catalog_see_all_from">from %1$s</string>
@@ -974,7 +955,7 @@
     <string name="update_unknown_sources">Allow installs from unknown sources to continue.</string>
     <!-- AccountScreen -->
     <string name="account_title">Account</string>
-    <string name="account_sign_in_description">Sign in to sync your library, watch progress, addons, and plugins across devices.</string>
+    <string name="account_sign_in_description">Sign in to sync your library, watch progress, addons, and plugins across devices. Library sync uses Nuvio Sync when Trakt is not connected, and watch progress can use either Trakt or Nuvio Sync.</string>
     <string name="account_sync_code_title">Sync Code</string>
     <string name="account_sync_code_description">Sync across devices without creating an account.</string>
     <string name="account_linked_devices">Linked Devices (%1$d)</string>
@@ -1100,7 +1081,7 @@
     <string name="detail.noEpisodesFound">No episodes found.</string>
     <string name="detail.seasonLabel">Season {{season}}</string>
     <string name="detail.episodeOptions">Episode Options</string>
-    <string name="home.continueStatusNextUp">Next episode</string>
+    <string name="home.continueStatusNextUp">Next Up</string>
     <string name="home.continueStatusContinue">Continue</string>
     <string name="home.continueStatusAlmostDone">Almost done</string>
     <string name="home.timeLeft">{{minutes}}m left</string>
@@ -1138,69 +1119,9 @@
     <string name="settings.appearance.themes.violet">Violet</string>
     <string name="settings.appearance.themes.white">White</string>
     <string name="settings.dialogs.playerPreference">Player preference</string>
+    <string name="settings.dialogs.preferredQuality">Preferred quality</string>
     <string name="settings.dialogs.preferredSubtitleLanguage">Preferred subtitle language</string>
     <string name="settings.dialogs.subtitleRenderMode">Subtitle render mode</string>
-    <string name="debrid_title">Connected Services</string>
-    <string name="debrid_subtitle">Connect accounts for links and library access</string>
-    <string name="debrid_cloud_library">Cloud library</string>
-    <string name="debrid_cloud_library_description">Browse and play files already in your connected accounts.</string>
-    <string name="debrid_enable_title">Resolve playable links</string>
-    <string name="debrid_enable_subtitle">Ask a connected service for playable links when a result needs it. This may add the item to that service.</string>
-    <string name="debrid_resolve_with">Resolve with</string>
-    <string name="debrid_resolve_with_description">Choose which connected account handles playable links.</string>
-    <string name="debrid_add_key_first">Connect an account first.</string>
-    <string name="debrid_not_set">Not set</string>
-    <string name="debrid_provider_description">Connect your {{provider}} account.</string>
-    <string name="debrid_api_key_dialog_title">{{provider}} API Key</string>
-    <string name="debrid_key_invalid">Could not validate this API key.</string>
-    <string name="debrid_prepare_instant_playback">Prepare links</string>
-    <string name="debrid_prepare_instant_playback_description">Resolve playable links before playback starts.</string>
-    <string name="debrid_prepare_stream_count">Links to prepare</string>
-    <string name="debrid_prepare_count_one">1 link</string>
-    <string name="debrid_prepare_count_many">{{count}} links</string>
-    <string name="debrid_stream_max_results_title">Max results</string>
-    <string name="debrid_stream_max_results_subtitle">Limit how many Direct Debrid sources appear.</string>
-    <string name="debrid_stream_max_results_all">All streams</string>
-    <string name="debrid_stream_max_results_count">{{count}} streams</string>
-    <string name="debrid_stream_sort_title">Sort streams</string>
-    <string name="debrid_stream_sort_subtitle">Choose how Direct Debrid sources are ordered.</string>
-    <string name="debrid_stream_sort_default">Default</string>
-    <string name="debrid_stream_sort_quality">Quality, highest first</string>
-    <string name="debrid_stream_sort_size_desc">Size, largest first</string>
-    <string name="debrid_stream_sort_size_asc">Size, smallest first</string>
-    <string name="debrid_stream_min_quality_title">Minimum quality</string>
-    <string name="debrid_stream_min_quality_subtitle">Hide sources below the selected resolution.</string>
-    <string name="debrid_stream_min_quality_any">Any quality</string>
-    <string name="debrid_stream_min_quality_720">720p and above</string>
-    <string name="debrid_stream_min_quality_1080">1080p and above</string>
-    <string name="debrid_stream_min_quality_2160">4K only</string>
-    <string name="debrid_stream_dolby_vision_title">Dolby Vision</string>
-    <string name="debrid_stream_dolby_vision_subtitle">Show, hide, or require Dolby Vision sources.</string>
-    <string name="debrid_stream_hdr_title">HDR</string>
-    <string name="debrid_stream_hdr_subtitle">Show, hide, or require HDR sources.</string>
-    <string name="debrid_stream_feature_any">Any</string>
-    <string name="debrid_stream_feature_exclude">Hide</string>
-    <string name="debrid_stream_feature_only">Only</string>
-    <string name="debrid_stream_codec_title">Codec</string>
-    <string name="debrid_stream_codec_subtitle">Filter sources by video codec.</string>
-    <string name="debrid_stream_codec_any">Any codec</string>
-    <string name="debrid_stream_codec_h264">H.264 / AVC</string>
-    <string name="debrid_stream_codec_hevc">HEVC / H.265</string>
-    <string name="debrid_stream_codec_av1">AV1</string>
-    <string name="debrid_stream_name_template_title">Stream name pattern</string>
-    <string name="debrid_stream_name_template_subtitle">Pattern used to generate Direct Debrid source names.</string>
-    <string name="debrid_stream_name_template_prompt">Stream name pattern</string>
-    <string name="debrid_stream_description_template_title">Stream description pattern</string>
-    <string name="debrid_stream_description_template_subtitle">Pattern used to generate Direct Debrid source details.</string>
-    <string name="debrid_stream_description_template_prompt">Stream description pattern</string>
-    <string name="debrid_formatter_reset_title">Reset formatting</string>
-    <string name="debrid_formatter_reset_subtitle">Restore default source formatting.</string>
-    <string name="debrid_formatter_reset_value">Reset</string>
-    <string name="debrid_resolving_stream">Resolving debrid stream</string>
-    <string name="debrid_stale_stream">This Debrid result expired. Refreshing streams.</string>
-    <string name="debrid_missing_api_key">Add a Debrid API key in Settings.</string>
-    <string name="debrid_not_cached">Not cached on this service.</string>
-    <string name="debrid_resolution_failed">Could not resolve this Debrid stream.</string>
     <string name="settings.integration.backToIntegrations.subtitle">Return to integration list</string>
     <string name="settings.integration.backToIntegrations.title">Back to Integrations</string>
     <string name="settings.integration.tmdb.apiKey.prompt">TMDB API key</string>
@@ -1210,6 +1131,8 @@
     <string name="settings.playback.enableSubtitles.title">Enable Subtitles</string>
     <string name="settings.playback.preferredAudio.subtitle">Choose the default audio language.</string>
     <string name="settings.playback.preferredPlayer.subtitle">Select the playback engine priority.</string>
+    <string name="settings.playback.preferredQuality.subtitle">Choose the default quality target.</string>
+    <string name="settings.playback.preferredQuality.title">Preferred Quality</string>
     <string name="settings.playback.renderMode.subtitle">Choose how subtitles are drawn.</string>
     <string name="settings.playback.renderMode.title">Render Mode</string>
     <string name="settings.playback.subtitleLanguage.subtitle">Preferred subtitle language.</string>

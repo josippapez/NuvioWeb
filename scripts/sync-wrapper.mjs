@@ -8,10 +8,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
 const distDir = path.join(rootDir, "dist");
 const appName = "Nuvio TV";
-const bundledWebOsRuntimeDirName = "webOSTVjs-1.2.12";
-const webOsServiceSourceDirName = "space.nuvio.webos.service";
-const webOsServiceId = "space.nuvio.webos.service";
-const webOsServiceDirName = webOsServiceId;
+const webOsServiceId = "com.nuvio.lg.service";
+const webOsServiceDirName = "com.nuvio.lg.service";
+const tizenServiceDirName = "com.nuvio.tizen.service";
+const tizenServiceIdSuffix = ".NuvioMediaService";
+const tizenServiceEntryPath = `services/${tizenServiceDirName}/src/service.js`;
 const defaultEnvFileContents = `(function defineNuvioEnv() {
   var root = typeof globalThis !== "undefined" ? globalThis : window;
   root.__NUVIO_ENV__ = Object.assign({}, root.__NUVIO_ENV__ || {}, {
@@ -20,7 +21,6 @@ const defaultEnvFileContents = `(function defineNuvioEnv() {
     TV_LOGIN_REDIRECT_BASE_URL: "",
     YOUTUBE_PROXY_URL: "",
     ADDON_REMOTE_BASE_URL: "",
-    WEBOS_SERVICE_ID: "space.nuvio.webos.service",
     ENABLE_REMOTE_WRAPPER_MODE: false,
     PREFERRED_PLAYBACK_ORDER: ["native-hls", "hls.js", "dash.js", "native-file", "platform-avplay"],
     TMDB_API_KEY: ""
@@ -35,10 +35,6 @@ const wrapperIconFiles = {
   webosLargeIcon: {
     source: path.join(rootDir, "assets", "images", "largeIcon.png"),
     target: "largeIcon.png"
-  },
-  webosSplash: {
-    source: path.join(rootDir, "assets", "images", "splash.png"),
-    target: "splash.png"
   },
   tizenIcon: {
     source: path.join(rootDir, "assets", "images", "tizenIcon.png"),
@@ -120,15 +116,6 @@ async function assertDistExists() {
   }
 }
 
-async function pathExists(filePath) {
-  try {
-    await access(filePath, fsConstants.F_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 async function syncFolder(targetDir, folderName) {
   await rm(path.join(targetDir, folderName), { recursive: true, force: true });
   await cp(path.join(distDir, folderName), path.join(targetDir, folderName), { recursive: true });
@@ -139,23 +126,26 @@ async function syncRootFolder(targetDir, folderName) {
   await cp(path.join(rootDir, folderName), path.join(targetDir, folderName), { recursive: true });
 }
 
-async function syncServiceFolder(targetDir, serviceDirName, { targetServiceDirName = serviceDirName } = {}) {
+async function syncServiceFolder(targetDir, serviceDirName) {
   const targetServicesDir = path.join(targetDir, "services");
   await mkdir(targetServicesDir, { recursive: true });
-  await rm(path.join(targetServicesDir, webOsServiceSourceDirName), { recursive: true, force: true });
   await rm(path.join(targetServicesDir, webOsServiceDirName), { recursive: true, force: true });
+  await rm(path.join(targetServicesDir, tizenServiceDirName), { recursive: true, force: true });
   await cp(
     path.join(rootDir, "services", serviceDirName),
-    path.join(targetServicesDir, targetServiceDirName),
+    path.join(targetServicesDir, serviceDirName),
     { recursive: true }
   );
 }
 
 async function syncBuild(targetDir) {
   await mkdir(targetDir, { recursive: true });
-  await syncFolder(targetDir, "assets");
-  await syncFolder(targetDir, "css");
-  await syncFolder(targetDir, "res");
+  await Promise.all([
+    syncFolder(targetDir, "assets"),
+    syncFolder(targetDir, "css"),
+    syncFolder(targetDir, "js"),
+    syncFolder(targetDir, "res")
+  ]);
 
   await cp(path.join(distDir, "app.bundle.js"), path.join(targetDir, "app.bundle.js"));
   try {
@@ -179,17 +169,6 @@ async function syncBuild(targetDir) {
 
 }
 
-async function copyBundledWebOsRuntime(targetDir) {
-  const sourceDir = path.join(rootDir, bundledWebOsRuntimeDirName);
-  if (!(await pathExists(sourceDir))) {
-    return "";
-  }
-
-  await rm(path.join(targetDir, bundledWebOsRuntimeDirName), { recursive: true, force: true });
-  await cp(sourceDir, path.join(targetDir, bundledWebOsRuntimeDirName), { recursive: true });
-  return `${bundledWebOsRuntimeDirName}/webOSTV.js`;
-}
-
 function buildWebOsIndexHtml({ webOsScriptPath = "" } = {}) {
   const webOsScriptTag = webOsScriptPath
     ? `  <script src="${webOsScriptPath}"></script>\n`
@@ -210,6 +189,8 @@ function buildWebOsIndexHtml({ webOsScriptPath = "" } = {}) {
 <body>
   <script>window.__NUVIO_PLATFORM__ = "webos";</script>
   <script src="nuvio.env.js"></script>
+  <script src="js/runtime/polyfills.js"></script>
+  <script src="js/runtime/env.js"></script>
   <script src="assets/libs/qrcode-generator.js"></script>
 ${webOsScriptTag}  <script defer src="app.bundle.js"></script>
 </body>
@@ -222,7 +203,7 @@ function buildTizenIndexHtml() {
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=1920, height=1080, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <title>${appName}</title>
   <link rel="stylesheet" href="css/base.css" />
@@ -231,106 +212,88 @@ function buildTizenIndexHtml() {
   <link rel="stylesheet" href="css/themes.css" />
 </head>
 <body>
-  <script defer src="main.js"></script>
+  <script type="module" defer src="main.js"></script>
 </body>
 </html>
 `;
 }
 
 function buildTizenMainJs() {
-  return `/// <reference path="../../index.d.ts" />
+  return `import * as wrtService from "wrt:service";
 
-(function bootstrapTizen() {
-  "use strict";
+window.__NUVIO_PLATFORM__ = "tizen";
 
-  window.__NUVIO_PLATFORM__ = "tizen";
+var tvInput = window.tizen && window.tizen.tvinputdevice;
+if (tvInput && typeof tvInput.registerKey === "function") {
+  ["MediaPlay", "MediaPause", "MediaPlayPause", "MediaFastForward", "MediaRewind"].forEach(function registerKey(keyName) {
+    try {
+      tvInput.registerKey(keyName);
+    } catch (_) {}
+  });
+}
 
-  function ensureRuntimeCompatibility() {
-    if (typeof window.globalThis === "undefined") {
-      window.globalThis = window;
-    }
+function getTizenPackageId() {
+  try {
+    return String(window.tizen?.application?.getCurrentApplication?.().appInfo?.packageId || "").trim();
+  } catch (_) {
+    return "";
+  }
+}
 
-    if (!String.prototype.replaceAll) {
-      String.prototype.replaceAll = function replaceAll(searchValue, replaceValue) {
-        var source = String(this);
-        if (searchValue instanceof RegExp) {
-          return source.replace(searchValue, replaceValue);
-        }
-        return source.split(String(searchValue)).join(String(replaceValue));
-      };
-    }
-
-    if (!Object.fromEntries) {
-      Object.fromEntries = function fromEntries(entries) {
-        var result = {};
-        var iterator;
-        var next;
-        var entry;
-
-        if (!entries) {
-          return result;
-        }
-
-        if (typeof Symbol !== "undefined" && entries[Symbol.iterator]) {
-          iterator = entries[Symbol.iterator]();
-          while (!(next = iterator.next()).done) {
-            entry = next.value;
-            result[entry[0]] = entry[1];
-          }
-          return result;
-        }
-
-        for (var index = 0; index < entries.length; index += 1) {
-          result[entries[index][0]] = entries[index][1];
-        }
-        return result;
-      };
-    }
-
-    if (typeof window.Node === "undefined") {
-      window.Node = { ELEMENT_NODE: 1 };
-    }
+function startLocalMediaService() {
+  var packageId = getTizenPackageId();
+  if (!packageId || typeof wrtService.startService !== "function") {
+    return Promise.resolve(false);
   }
 
-  function registerRemoteKeys() {
-    var tvInput = window.tizen && window.tizen.tvinputdevice;
-    if (!tvInput || typeof tvInput.registerKey !== "function") {
-      return;
+  var serviceId = packageId + "${tizenServiceIdSuffix}";
+  return new Promise(function(resolve) {
+    var settled = false;
+
+    function finish(value) {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(Boolean(value));
     }
 
-    [
-      "Back",
-      "Return",
-      "MediaPlay",
-      "MediaPause",
-      "MediaPlayPause",
-      "MediaStop",
-      "MediaFastForward",
-      "MediaRewind",
-      "MediaTrackPrevious",
-      "MediaTrackNext"
-    ].forEach(function registerKey(keyName) {
-      try {
-        tvInput.registerKey(keyName);
-      } catch (ignored) {}
-    });
-  }
+    try {
+      wrtService.startService(
+        serviceId,
+        function() {
+          finish(true);
+        },
+        function(error) {
+          console.warn("[tizen-service] Failed to start local media service", serviceId, error);
+          finish(false);
+        }
+      );
+    } catch (error) {
+      console.warn("[tizen-service] Failed to request local media service", serviceId, error);
+      finish(false);
+    }
 
-  function loadScript(src) {
-    var script = document.createElement("script");
-    script.async = false;
-    script.src = src;
-    script.defer = false;
-    document.body.appendChild(script);
-  }
+    setTimeout(function() {
+      finish(false);
+    }, 2500);
+  });
+}
 
-  ensureRuntimeCompatibility();
-  registerRemoteKeys();
+function loadScript(src) {
+  var script = document.createElement("script");
+  script.src = src;
+  script.defer = false;
+  document.body.appendChild(script);
+}
 
-  loadScript("nuvio.env.js");
-  loadScript("assets/libs/qrcode-generator.js");
-  loadScript("app.bundle.js");
-}());
+window.__NUVIO_TIZEN_MEDIA_SERVICE_READY__ = startLocalMediaService();
+
+loadScript("nuvio.env.js");
+loadScript("js/runtime/polyfills.js");
+loadScript("js/runtime/env.js");
+loadScript("assets/libs/qrcode-generator.js");
+loadScript("app.bundle.js");
 `;
 }
 
@@ -353,7 +316,6 @@ async function syncWrapperIcons(targetDir, { includeLargeIcon }) {
   const iconTasks = [wrapperIconFiles.webosIcon];
   if (includeLargeIcon) {
     iconTasks.push(wrapperIconFiles.webosLargeIcon);
-    iconTasks.push(wrapperIconFiles.webosSplash);
   }
 
   await Promise.all(iconTasks.map(({ source, target }) => cp(source, path.join(targetDir, target))));
@@ -386,30 +348,17 @@ async function updateWebOsMetadata(targetDir) {
   appInfo.version = appVersion;
   appInfo.icon = wrapperIconFiles.webosIcon.target;
   appInfo.largeIcon = wrapperIconFiles.webosLargeIcon.target;
-  appInfo.splashBackground = wrapperIconFiles.webosSplash.target;
   appInfo.services = [webOsServiceId];
-  delete appInfo.disableBackHistoryAPI;
 
   await writeTextFile(appInfoPath, `${JSON.stringify(appInfo, null, 2)}\n`);
   await syncWrapperIcons(targetDir, { includeLargeIcon: true });
+
+  const webOsScriptPath = await resolveWebOsScriptPath(targetDir);
+  await writeTextFile(path.join(targetDir, "index.html"), buildWebOsIndexHtml({ webOsScriptPath }));
 }
 
 async function syncWebOsCompanionFiles(targetDir) {
-  await syncServiceFolder(targetDir, webOsServiceSourceDirName, {
-    targetServiceDirName: webOsServiceDirName
-  });
-
-  const serviceDir = path.join(targetDir, "services", webOsServiceDirName);
-  const filesToRewrite = [
-    path.join(serviceDir, "package.json"),
-    path.join(serviceDir, "services.json"),
-    path.join(serviceDir, "src", "serverHost.js")
-  ];
-
-  await Promise.all(filesToRewrite.map(async (filePath) => {
-    const current = await readTextFile(filePath, `Expected webOS service file at ${filePath}.`);
-    await writeTextFile(filePath, current.replaceAll(webOsServiceSourceDirName, webOsServiceId));
-  }));
+  await syncServiceFolder(targetDir, webOsServiceDirName);
 }
 
 function upsertXmlTag(xml, tagName, innerText) {
@@ -446,12 +395,47 @@ function insertIntoWidget(xml, snippet) {
   return xml.replace(widgetOpenTagPattern, (match) => `${match}\n    ${snippet}`);
 }
 
+function escapeRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function upsertTizenFeature(xml, featureName) {
+  const escapedFeatureName = escapeRegExp(featureName);
+  const featurePattern = new RegExp(`<feature\\b[^>]*name="${escapedFeatureName}"[^>]*/>`);
+  if (featurePattern.test(xml)) {
+    return xml;
+  }
+  return insertIntoWidget(xml, `<feature name="${featureName}"/>`);
+}
+
+function extractTizenPackageId(xml) {
+  const match = xml.match(/<tizen:application\b[^>]*package="([^"]+)"/);
+  return String(match?.[1] || "").trim();
+}
+
 function upsertTizenWidgetVersion(xml, version) {
   const widgetPattern = /<widget\b([^>]*?)\bversion="[^"]*"([^>]*)>/;
   if (widgetPattern.test(xml)) {
     return xml.replace(widgetPattern, `<widget$1version="${version}"$2>`);
   }
   return xml;
+}
+
+function upsertTizenService(xml, { serviceId, contentSrc, name, description }) {
+  const contentPattern = escapeRegExp(contentSrc);
+  const servicePattern = new RegExp(
+    `\\s*<tizen:service\\b[^>]*>[\\s\\S]*?<tizen:content\\s+src="${contentPattern}"\\s*/>[\\s\\S]*?<\\/tizen:service>`,
+    "m"
+  );
+  const snippet = `<tizen:service id="${serviceId}" type="ui">
+      <tizen:content src="${contentSrc}"/>
+      <tizen:name>${name}</tizen:name>
+      <tizen:description>${description}</tizen:description>
+    </tizen:service>`;
+  if (servicePattern.test(xml)) {
+    return xml.replace(servicePattern, `\n    ${snippet}`);
+  }
+  return insertIntoWidget(xml, snippet);
 }
 
 async function updateTizenMetadata(targetDir) {
@@ -462,48 +446,40 @@ async function updateTizenMetadata(targetDir) {
     `Tizen wrapper metadata not found at ${configPath}. Expected config.xml in the wrapper root.`
   );
   let configXml = configRaw;
+  const packageId = extractTizenPackageId(configXml);
+  if (!packageId) {
+    throw new Error(`Unable to resolve Tizen package ID from ${configPath}.`);
+  }
 
   configXml = upsertTizenIcon(configXml, wrapperIconFiles.tizenIcon.target);
   configXml = upsertXmlTag(configXml, "name", appName);
   configXml = upsertTizenWidgetVersion(configXml, appVersion);
+  configXml = upsertTizenFeature(configXml, "http://tizen.org/feature/web.service");
+  configXml = upsertTizenService(configXml, {
+    serviceId: `${packageId}${tizenServiceIdSuffix}`,
+    contentSrc: tizenServiceEntryPath,
+    name: `${appName} Media Service`,
+    description: "Local media helper service for Tizen playback"
+  });
 
   await writeTextFile(configPath, configXml);
   await syncTizenIcon(targetDir);
+  await syncServiceFolder(targetDir, tizenServiceDirName);
   await writeTextFile(path.join(targetDir, "index.html"), buildTizenIndexHtml());
   await writeTextFile(path.join(targetDir, "main.js"), buildTizenMainJs());
 }
 
-async function injectWebOsRuntimeEnv(targetDir) {
-  const envPath = path.join(targetDir, "nuvio.env.js");
-  const injection = `
-(function configureNuvioWebOsRuntimeEnv() {
-  var root = typeof globalThis !== "undefined" ? globalThis : window;
-  root.__NUVIO_ENV__ = Object.assign({}, root.__NUVIO_ENV__ || {}, {
-    WEBOS_SERVICE_ID: "${webOsServiceId}"
-  });
-}());
-`;
-  const existing = await readFile(envPath, "utf8").catch(() => "");
-  await writeTextFile(envPath, `${existing.trim()}\n${injection}`);
-}
-
 const { platform, targetDir } = parseArgs(process.argv.slice(2));
 await syncVersionFiles();
-await mkdir(targetDir, { recursive: true });
+await assertDistExists();
+await syncBuild(targetDir);
 
 if (platform === "webos") {
-  await assertDistExists();
-  await syncBuild(targetDir);
   await updateWebOsMetadata(targetDir);
   await syncWebOsCompanionFiles(targetDir);
-  const webOsScriptPath = await copyBundledWebOsRuntime(targetDir);
-  await writeTextFile(path.join(targetDir, "index.html"), buildWebOsIndexHtml({ webOsScriptPath }));
-  await injectWebOsRuntimeEnv(targetDir);
 }
 
 if (platform === "tizen") {
-  await assertDistExists();
-  await syncBuild(targetDir);
   await updateTizenMetadata(targetDir);
 }
 

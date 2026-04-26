@@ -18,7 +18,7 @@ export function renderModernHomeLayout({
   continueWatchingItems = [],
   continueWatchingLoading = false,
   continueWatchingLoadingCount = 0,
-  rowItemLimit = 10,
+  rowItemLimit = 15,
   showHeroSection = false,
   showPosterLabels = true,
   showCatalogTypeSuffix = true,
@@ -27,7 +27,6 @@ export function renderModernHomeLayout({
   focusedItemIndex = -1,
   expandFocusedPoster = false,
   buildModernHeroPresentation,
-  renderHeroBackdropImage,
   renderContinueWatchingSection,
   createPosterCardMarkup,
   createSeeAllCardMarkup,
@@ -60,7 +59,7 @@ export function renderModernHomeLayout({
       });
     }
 
-    const maxItems = Math.max(1, Number(rowItemLimit || 10));
+    const maxItems = Math.max(1, Number(rowItemLimit || 15));
     const hasSeeAll = !isLoading && items.length > maxItems;
     const visibleItems = rowItems.slice(0, maxItems);
     const rowTitle = formatCatalogRowTitle(rowData.catalogName, rowData.type, showCatalogTypeSuffix);
@@ -82,10 +81,7 @@ export function renderModernHomeLayout({
         </div>
         <div class="home-track" data-track-row-key="${escapeHtml(rowKey)}">
           ${cardsMarkup}
-          ${hasSeeAll ? createSeeAllCardMarkup(seeAllId, rowData, {
-            layoutMode: "modern",
-            preferLandscapePoster: preferLandscapePosters
-          }) : ""}
+          ${hasSeeAll ? createSeeAllCardMarkup(seeAllId, rowData) : ""}
         </div>
       </section>
     `);
@@ -99,7 +95,6 @@ export function renderModernHomeLayout({
           heroItem,
           heroCandidates,
           buildModernHeroPresentation,
-          renderHeroBackdropImage,
           escapeHtml,
           escapeAttribute
         }) : (continueWatchingLoading ? renderModernHeroSkeletonMarkup() : "")}
@@ -164,7 +159,6 @@ function renderModernHeroMarkup({
   heroItem,
   heroCandidates,
   buildModernHeroPresentation,
-  renderHeroBackdropImage,
   escapeHtml,
   escapeAttribute
 }) {
@@ -212,11 +206,9 @@ function renderModernHeroMarkup({
                data-item-title="${escapeAttribute(heroItem?.name || "Untitled")}">
         <div class="home-modern-hero-media">
           <div class="home-hero-backdrop-wrap">
-          ${typeof renderHeroBackdropImage === "function"
-              ? renderHeroBackdropImage(display)
-              : (display.backdrop
-                ? `<img class="home-hero-backdrop" src="${escapeAttribute(display.backdrop)}" alt="${escapeAttribute(display.title)}" decoding="async" fetchpriority="high" />`
-                : '<div class="home-hero-backdrop placeholder"></div>')}
+          ${display.backdrop
+              ? `<img class="home-hero-backdrop" src="${escapeAttribute(display.backdrop)}" alt="${escapeAttribute(display.title)}" decoding="async" fetchpriority="high" />`
+              : '<div class="home-hero-backdrop placeholder"></div>'}
           </div>
           <div class="home-hero-trailer-layer"></div>
         </div>

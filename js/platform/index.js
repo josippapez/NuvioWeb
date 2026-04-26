@@ -55,26 +55,10 @@ function detectPlatformName() {
   if (override && ADAPTERS[override]) {
     return override;
   }
-  const searchParams = String(globalThis.location?.search || "").toLowerCase();
-  if (searchParams.includes("wrapper=tizen") || searchParams.includes("source=tizenbrew")) {
-    return "tizen";
-  }
-  const userAgent = String(globalThis.navigator?.userAgent || "").toLowerCase();
   if (globalThis.webOS || globalThis.PalmSystem || globalThis.webOSSystem) {
     return "webos";
   }
-  if (userAgent.includes("webos") || userAgent.includes("web0s")) {
-    return "webos";
-  }
-  const webapis = globalThis.webapis || {};
-  if (
-    globalThis.tizen
-    || globalThis.avplay
-    || webapis.avplay
-    || webapis.avPlay
-    || webapis.productinfo
-    || userAgent.includes("tizen")
-  ) {
+  if (globalThis.tizen || String(globalThis.navigator?.userAgent || "").toLowerCase().includes("tizen")) {
     return "tizen";
   }
   return "browser";
@@ -120,15 +104,6 @@ export const Platform = {
   },
 
   exitApp() {
-    if (globalThis.document && typeof globalThis.CustomEvent === "function") {
-      const beforeExitEvent = new CustomEvent("nuvio:beforeExitApp", {
-        cancelable: true
-      });
-      globalThis.document.dispatchEvent(beforeExitEvent);
-      if (beforeExitEvent.defaultPrevented) {
-        return false;
-      }
-    }
     return getAdapter().exitApp();
   },
 

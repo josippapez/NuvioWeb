@@ -8,6 +8,7 @@ const DEFAULTS = {
   subtitleLanguage: "off",
   secondarySubtitleLanguage: "off",
   preferredAudioLanguage: "system",
+  preferredQuality: "auto",
   trailerAutoplay: false,
   skipIntroEnabled: true,
   subtitleRenderMode: "native",
@@ -26,21 +27,10 @@ const DEFAULTS = {
   persistAudioAmplification: false
 };
 
-function extractLanguageCode(value, fallback = "off") {
-  if (value && typeof value === "object") {
-    return extractLanguageCode(value.id ?? value.value ?? value.code ?? value.language ?? value.languageCode, fallback);
-  }
-  const code = String(value ?? "").trim();
-  if (!code || code.toLowerCase() === "[object object]") {
-    return fallback;
-  }
-  return code;
-}
-
-function normalizeSelectableSubtitleLanguageCode(language, fallback = "off") {
-  const code = extractLanguageCode(language, fallback).trim().toLowerCase();
+function normalizeSelectableSubtitleLanguageCode(language) {
+  const code = String(language ?? "").trim().toLowerCase();
   if (!code) {
-    return fallback;
+      return "off";
   }
   switch (code) {
     case "pt-br":
@@ -55,7 +45,7 @@ function normalizeSelectableSubtitleLanguageCode(language, fallback = "off") {
     case "forced":
     case "force":
     case "forc":
-      return "forced";
+      return "off";
     case "none":
     case "off":
       return "off";
@@ -69,28 +59,15 @@ function normalizePlayerSettings(settings = {}) {
     ...DEFAULTS.subtitleStyle,
     ...(settings.subtitleStyle || {})
   };
-  const preferredLanguage = normalizeSelectableSubtitleLanguageCode(
-    subtitleStyle.preferredLanguage ?? settings.subtitleLanguage,
-    DEFAULTS.subtitleStyle.preferredLanguage
-  );
-  const subtitlesEnabled = settings.subtitlesEnabled ?? DEFAULTS.subtitlesEnabled;
-  const normalizedPreferredLanguage = preferredLanguage === "off" && subtitlesEnabled !== false
-    ? "forced"
-    : preferredLanguage;
-  const secondaryPreferredLanguage = normalizeSelectableSubtitleLanguageCode(
-    subtitleStyle.secondaryPreferredLanguage ?? settings.secondarySubtitleLanguage,
-    DEFAULTS.subtitleStyle.secondaryPreferredLanguage
-  );
   return {
     ...DEFAULTS,
     ...settings,
-    subtitlesEnabled,
-    subtitleLanguage: normalizedPreferredLanguage,
-    secondarySubtitleLanguage: secondaryPreferredLanguage,
+    subtitleLanguage: normalizeSelectableSubtitleLanguageCode(settings.subtitleLanguage ?? DEFAULTS.subtitleLanguage),
+    secondarySubtitleLanguage: normalizeSelectableSubtitleLanguageCode(settings.secondarySubtitleLanguage ?? DEFAULTS.secondarySubtitleLanguage),
     subtitleStyle: {
       ...subtitleStyle,
-      preferredLanguage: normalizedPreferredLanguage,
-      secondaryPreferredLanguage
+      preferredLanguage: normalizeSelectableSubtitleLanguageCode(subtitleStyle.preferredLanguage ?? DEFAULTS.subtitleStyle.preferredLanguage),
+      secondaryPreferredLanguage: normalizeSelectableSubtitleLanguageCode(subtitleStyle.secondaryPreferredLanguage ?? DEFAULTS.subtitleStyle.secondaryPreferredLanguage)
     }
   };
 }

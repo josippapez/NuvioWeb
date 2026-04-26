@@ -33,33 +33,6 @@ function queueWatchedItemsCloudSync(delayMs = 250) {
   }, delayMs);
 }
 
-function matchesWatchedTarget(item = {}, contentId, options = null) {
-  const targetContentId = String(contentId || "");
-  if (!targetContentId || item.contentId !== targetContentId) {
-    return false;
-  }
-  const targetSeason = options?.season == null || options?.season === "" ? null : Number(options.season);
-  const targetEpisode = options?.episode == null || options?.episode === "" ? null : Number(options.episode);
-  const hasScopedEpisode = targetSeason != null || targetEpisode != null;
-  if (!hasScopedEpisode) {
-    return true;
-  }
-  return item.season === targetSeason && item.episode === targetEpisode;
-}
-
-async function deleteWatchedItemsFromCloud(items = []) {
-  if (!items.length) {
-    return false;
-  }
-  try {
-    const { WatchedItemsSyncService } = await import("../../core/profile/watchedItemsSyncService.js");
-    return WatchedItemsSyncService.deleteItems(items);
-  } catch (error) {
-    console.warn("Watched items cloud delete failed", error);
-    return false;
-  }
-}
-
 class WatchedItemsRepository {
 
   async getAll(limit = 2000) {
@@ -89,11 +62,7 @@ class WatchedItemsRepository {
   }
 
   async unmark(contentId, options = null) {
-    const pid = activeProfileId();
-    const removedItems = WatchedItemsStore.listForProfile(pid)
-      .filter((item) => matchesWatchedTarget(item, contentId, options));
-    WatchedItemsStore.remove(contentId, pid, options);
-    await deleteWatchedItemsFromCloud(removedItems);
+    WatchedItemsStore.remove(contentId, activeProfileId(), options);
     queueWatchedItemsCloudSync();
   }
 

@@ -5,17 +5,16 @@ import {
   libraryRepository,
   libraryTypeLabel
 } from "../../../data/repository/libraryRepository.js";
-import { I18n } from "../../../i18n/index.js";
 
 const ALL_KEY = "__all__";
 const MESSAGE_CLEAR_MS = 2400;
 
 export const LIBRARY_SORT_OPTIONS = [
-  { key: LibrarySortOptionKey.DEFAULT, labelKey: "library_sort_trakt_order", fallback: "List Order" },
-  { key: LibrarySortOptionKey.ADDED_DESC, labelKey: "library_sort_added_desc", fallback: "Added ↓" },
-  { key: LibrarySortOptionKey.ADDED_ASC, labelKey: "library_sort_added_asc", fallback: "Added ↑" },
-  { key: LibrarySortOptionKey.TITLE_ASC, labelKey: "library_sort_title_asc", fallback: "Title A-Z" },
-  { key: LibrarySortOptionKey.TITLE_DESC, labelKey: "library_sort_title_desc", fallback: "Title Z-A" }
+  { key: LibrarySortOptionKey.DEFAULT, label: "Trakt Order" },
+  { key: LibrarySortOptionKey.ADDED_DESC, label: "Added ↓" },
+  { key: LibrarySortOptionKey.ADDED_ASC, label: "Added ↑" },
+  { key: LibrarySortOptionKey.TITLE_ASC, label: "Title A-Z" },
+  { key: LibrarySortOptionKey.TITLE_DESC, label: "Title Z-A" }
 ];
 
 export const LIBRARY_PRIVACY_OPTIONS = [
@@ -27,41 +26,13 @@ export const LIBRARY_PRIVACY_OPTIONS = [
 
 let persistedPosterFocusKey = null;
 
-function t(key, params = {}, fallback = key) {
-  return I18n.t(key, params, { fallback });
-}
-
-function translateOption(option) {
-  return {
-    ...option,
-    label: option.labelKey ? t(option.labelKey, {}, option.fallback || option.labelKey) : option.label
-  };
-}
-
-function getLibraryTypeLabel(key, options = {}) {
-  const normalized = String(key || "").trim().toLowerCase();
-  if (!normalized || normalized === ALL_KEY) {
-    return options.emptyState
-      ? t("library_type_items", {}, "items")
-      : t("library_type_all", {}, "All");
-  }
-  if (normalized === "movie") {
-    return t("type_movie", {}, "Movie");
-  }
-  if (normalized === "series") {
-    return t("type_series", {}, "Series");
-  }
-  const label = libraryTypeLabel(normalized);
-  return options.lowerCase ? label.toLowerCase() : label;
-}
-
 function makeInitialState() {
   return {
     sourceMode: LibrarySourceMode.LOCAL,
     allItems: [],
     visibleItems: [],
     listTabs: [],
-    availableTypeTabs: [{ key: ALL_KEY }],
+    availableTypeTabs: [{ key: ALL_KEY, label: "All" }],
     availableSortOptions: LIBRARY_SORT_OPTIONS.filter((option) => option.key !== LibrarySortOptionKey.DEFAULT),
     selectedListKey: null,
     selectedTypeKey: ALL_KEY,
@@ -82,12 +53,15 @@ function makeInitialState() {
 }
 
 function typeLabelForEmptyState(key) {
-  return getLibraryTypeLabel(key, { emptyState: true, lowerCase: true }).toLowerCase();
+  if (!key || key === ALL_KEY) {
+    return "all";
+  }
+  return libraryTypeLabel(key).toLowerCase();
 }
 
 function normalizeTypeTabs(items) {
   const seen = new Set();
-  const tabs = [{ key: ALL_KEY }];
+  const tabs = [{ key: ALL_KEY, label: "All" }];
   items.forEach((item) => {
     const key = String(item.type || "").trim().toLowerCase();
     if (!key || seen.has(key)) {
@@ -95,7 +69,8 @@ function normalizeTypeTabs(items) {
     }
     seen.add(key);
     tabs.push({
-      key
+      key,
+      label: libraryTypeLabel(key)
     });
   });
   return tabs;
@@ -277,41 +252,27 @@ export class LibraryController {
   }
 
   getSourceLabel() {
-    return this.state.sourceMode === LibrarySourceMode.TRAKT
-      ? t("trakt_watch_progress_source_trakt", {}, "Trakt")
-      : t("library_source_local", {}, "LOCAL");
+    return this.state.sourceMode === LibrarySourceMode.TRAKT ? "TRAKT" : "LOCAL";
   }
 
   getSelectedTypeLabel() {
-    return getLibraryTypeLabel(this.state.availableTypeTabs.find((item) => item.key === this.state.selectedTypeKey)?.key || ALL_KEY);
+    return this.state.availableTypeTabs.find((item) => item.key === this.state.selectedTypeKey)?.label || "All";
   }
 
   getSelectedSortLabel() {
-    return translateOption(this.state.availableSortOptions.find((item) => item.key === this.state.selectedSortKey) || LIBRARY_SORT_OPTIONS[1]).label;
+    return this.state.availableSortOptions.find((item) => item.key === this.state.selectedSortKey)?.label || "Added ↓";
   }
 
   getSelectedListLabel() {
-    return this.state.listTabs.find((item) => item.key === this.state.selectedListKey)?.title || t("library_filter_list", {}, "List");
+    return this.state.listTabs.find((item) => item.key === this.state.selectedListKey)?.title || "Select";
   }
 
   getEmptyStateTitle() {
-    const key = this.state.sourceMode === LibrarySourceMode.TRAKT
-      ? "library_empty_trakt_title"
-      : "library_empty_local_title";
-    const fallback = this.state.sourceMode === LibrarySourceMode.TRAKT
-      ? "No %1$s in this list"
-      : "No %1$s yet";
-    return t(key, [typeLabelForEmptyState(this.state.selectedTypeKey)], fallback);
+    return `No ${typeLabelForEmptyState(this.state.selectedTypeKey)} yet`;
   }
 
   getEmptyStateSubtitle() {
-    const key = this.state.sourceMode === LibrarySourceMode.TRAKT
-      ? "library_empty_trakt_subtitle"
-      : "library_empty_local_subtitle";
-    const fallback = this.state.sourceMode === LibrarySourceMode.TRAKT
-      ? "Use + in details to add items to watchlist or lists"
-      : "Start saving your favorites to see them here";
-    return t(key, {}, fallback);
+    return "Start saving your favorites to see them here";
   }
 
   getPickerOptions(picker) {
@@ -319,13 +280,10 @@ export class LibraryController {
       return this.state.listTabs.map((item) => ({ value: item.key, label: item.title }));
     }
     if (picker === "type") {
-      return this.state.availableTypeTabs.map((item) => ({ value: item.key, label: getLibraryTypeLabel(item.key) }));
+      return this.state.availableTypeTabs.map((item) => ({ value: item.key, label: item.label }));
     }
     if (picker === "sort") {
-      return this.state.availableSortOptions.map((item) => {
-        const translated = translateOption(item);
-        return { value: translated.key, label: translated.label };
-      });
+      return this.state.availableSortOptions.map((item) => ({ value: item.key, label: item.label }));
     }
     return [];
   }
@@ -523,7 +481,7 @@ export class LibraryController {
     }
     const name = String(editor.name || "").trim();
     if (!name) {
-      this.setError(t("library_error_name_required", {}, "List name is required"));
+      this.setError("List name is required");
       return;
     }
 
@@ -531,7 +489,7 @@ export class LibraryController {
     try {
       if (editor.mode === "create") {
         const newKey = await libraryRepository.createPersonalList(name, editor.description.trim() || null, editor.privacy);
-        this.setTransientMessage(t("library_message_list_created", {}, "List created"));
+        this.setTransientMessage("List created");
         await this.reload({ preserveOverlay: true });
         this.setState({
           pendingOperation: false,
@@ -540,7 +498,7 @@ export class LibraryController {
         });
       } else {
         await libraryRepository.updatePersonalList(editor.listId, name, editor.description.trim() || null, editor.privacy);
-        this.setTransientMessage(t("library_message_list_updated", {}, "List updated"));
+        this.setTransientMessage("List updated");
         await this.reload({ preserveOverlay: true });
         this.setState({
           pendingOperation: false,
@@ -549,7 +507,7 @@ export class LibraryController {
       }
     } catch (error) {
       this.setState({ pendingOperation: false });
-      this.setError(error?.message || t("library_error_save_failed", {}, "Failed to save list"));
+      this.setError(error?.message || "Failed to save list");
     }
   }
 
@@ -561,7 +519,7 @@ export class LibraryController {
     this.setState({ pendingOperation: true, errorMessage: null });
     try {
       await libraryRepository.deletePersonalList(selected.traktListId || selected.key.replace("personal:", ""));
-      this.setTransientMessage(t("library_message_list_deleted", {}, "List deleted"));
+      this.setTransientMessage("List deleted");
       await this.reload({ preserveOverlay: true });
       this.setState({
         pendingOperation: false,
@@ -569,7 +527,7 @@ export class LibraryController {
       });
     } catch (error) {
       this.setState({ pendingOperation: false });
-      this.setError(error?.message || t("library_error_delete_failed", {}, "Failed to delete list"));
+      this.setError(error?.message || "Failed to delete list");
     }
   }
 
@@ -590,7 +548,7 @@ export class LibraryController {
     this.setState({ pendingOperation: true, errorMessage: null });
     try {
       await libraryRepository.reorderPersonalLists(reordered.map((item) => item.traktListId || item.key.replace("personal:", "")));
-      this.setTransientMessage(t("library_message_list_order_updated", {}, "List order updated"));
+      this.setTransientMessage("List order updated");
       await this.reload({ preserveOverlay: true });
       this.setState({
         pendingOperation: false,
@@ -598,7 +556,7 @@ export class LibraryController {
       });
     } catch (error) {
       this.setState({ pendingOperation: false });
-      this.setError(error?.message || t("library_error_reorder_failed", {}, "Failed to reorder lists"));
+      this.setError(error?.message || "Failed to reorder lists");
     }
   }
 
@@ -606,12 +564,12 @@ export class LibraryController {
     this.setState({ isSyncing: true, errorMessage: null });
     try {
       await libraryRepository.refreshNow();
-      this.setTransientMessage(t("library_message_synced", {}, "Library synced"));
+      this.setTransientMessage("Library synced");
       await this.reload({ preserveOverlay: true });
       this.setState({ isSyncing: false });
     } catch (error) {
       this.setState({ isSyncing: false });
-      this.setError(error?.message || t("library_error_refresh_failed", {}, "Failed to refresh library"));
+      this.setError(error?.message || "Failed to refresh library");
     }
   }
 

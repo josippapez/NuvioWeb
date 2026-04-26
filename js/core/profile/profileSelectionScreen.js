@@ -4,6 +4,7 @@ import { ProfileSyncService } from "../../core/profile/profileSyncService.js";
 import { StartupSyncService } from "../../core/profile/startupSyncService.js";
 import { ScreenUtils } from "../../ui/navigation/screen.js";
 import { AvatarRepository } from "../../data/remote/supabase/avatarRepository.js";
+import { Platform } from "../../platform/index.js";
 import { ThemeManager } from "../../ui/theme/themeManager.js";
 import { I18n } from "../../i18n/index.js";
 
@@ -301,7 +302,7 @@ export const ProfileSelectionScreen = {
   },
 
   render() {
-    const canAddProfile = this.isManagementMode && this.getVisibleProfiles().length < 4;
+    const canAddProfile = this.getVisibleProfiles().length < 4;
     const title = this.isManagementMode
       ? t("profile_manage_title", {}, "Manage Profiles")
       : t("profile_selection_title", {}, "Who's watching?");
@@ -766,7 +767,7 @@ export const ProfileSelectionScreen = {
       }
     } else if (profileId === "add") {
       this.lastProfileFocusKey = "profile:add";
-      this.updateBackground(getDefaultProfileColor());
+      this.updateBackground("#555555");
     }
 
     if (avatarId && this.editorState) {
@@ -1020,25 +1021,61 @@ export const ProfileSelectionScreen = {
     return true;
   },
 
+  updateBackground(colorHex) {
+    const screen = this.container?.querySelector(".profile-screen");
+    if (!screen) return;
+
+    const targetColor = parseHexColor(colorHex, parseHexColor(getDefaultProfileColor()));
+
+    // Cancel any in-progress animation
+    if (this._bgAnimRaf) {
+      cancelAnimationFrame(this._bgAnimRaf);
+      this._bgAnimRaf = null;
+    }
+
+    // Start from whatever color is currently displayed
+    const fromColor = this._bgCurrentColor || targetColor;
+    this._bgCurrentColor = fromColor;
+
+    const DURATION = 520; // matches ATV animateColorAsState tween(520)
+    const startTime = performance.now();
+
+    const tick = (now) => {
+      const elapsed = now - startTime;
+      const t = Math.min(elapsed / DURATION, 1);
+      // Linear interpolation (ATV uses linear tween for color)
+      const animatedColor = {
+        r: Math.round(fromColor.r + (targetColor.r - fromColor.r) * t),
+        g: Math.round(fromColor.g + (targetColor.g - fromColor.g) * t),
+        b: Math.round(fromColor.b + (targetColor.b - fromColor.b) * t),
+      };
+      this._bgCurrentColor = animatedColor;
+      screen.style.background = this.buildBackgroundStyleFromColor(animatedColor);
+      if (t < 1) {
+        this._bgAnimRaf = requestAnimationFrame(tick);
+      } else {
+        this._bgAnimRaf = null;
+      }
+    };
+
+    this._bgAnimRaf = requestAnimationFrame(tick);
+  },
+
   buildBackgroundStyle(colorHex) {
+    const accent = parseHexColor(colorHex, parseHexColor(getDefaultProfileColor()));
+    return this.buildBackgroundStyleFromColor(accent);
+  },
+
+  buildBackgroundStyleFromColor(accent) {
     const rootStyles = getComputedStyle(document.documentElement);
     const background = parseHexColor(rootStyles.getPropertyValue("--bg-color"), { r: 13, g: 13, b: 13 });
     const elevated = parseHexColor(rootStyles.getPropertyValue("--bg-elevated"), { r: 26, g: 26, b: 26 });
-    const accent = parseHexColor(colorHex, parseHexColor(getDefaultProfileColor()));
     const gradientTop = mixColors(elevated, accent, 0.3);
     const gradientMid = mixColors(background, accent, 0.14);
     return `
-      linear-gradient(180deg, ${colorToRgba(gradientTop, 1)} 0%, ${colorToRgba(gradientMid, 1)} 42%, ${colorToRgba(background, 1)} 100%),
-      linear-gradient(90deg, ${colorToRgba(accent, 0.26)} 0%, ${colorToRgba(accent, 0.08)} 45%, rgba(0, 0, 0, 0) 72%, rgba(0, 0, 0, 0) 100%)
+      linear-gradient(90deg, ${colorToRgba(accent, 0.26)} 0%, ${colorToRgba(accent, 0.08)} 45%, rgba(0, 0, 0, 0) 72%, rgba(0, 0, 0, 0) 100%),
+      linear-gradient(180deg, ${colorToRgba(gradientTop, 1)} 0%, ${colorToRgba(gradientMid, 1)} 42%, ${colorToRgba(background, 1)} 100%)
     `;
-  },
-
-  updateBackground(colorHex) {
-    const screen = this.container?.querySelector(".profile-screen");
-    if (!screen) {
-      return;
-    }
-    screen.style.background = this.buildBackgroundStyle(colorHex);
   },
 
   syncEditorPreview() {
@@ -1119,7 +1156,6 @@ export const ProfileSelectionScreen = {
     this.optionsProfileId = String(profile.id);
     this.pendingFocusKey = "options:edit";
     this.suppressNextFocusClick("options:edit");
-    this.suppressOptionsDialogEnterUntilKeyUp = true;
     this.render();
   },
 
@@ -1652,7 +1688,7 @@ export const ProfileSelectionScreen = {
       || this.container.querySelector("[data-overlay-root='editor']");
     const currentProfileCard = this.container.querySelector(".profile-card.focused") || null;
 
-    if (code !== 13 || !this.canHoldManageProfile(currentProfileCard)) {
+    if (!Platform.isTizen() || code !== 13 || !this.canHoldManageProfile(currentProfileCard)) {
       this.cancelPendingProfileHold();
     }
 
@@ -1681,9 +1717,6 @@ export const ProfileSelectionScreen = {
         return;
       }
       event?.preventDefault?.();
-      if (overlayRoot.dataset.overlayRoot === "options" && this.suppressOptionsDialogEnterUntilKeyUp) {
-        return;
-      }
       this.rememberKeyboardActivation(focused);
       await this.activateFocusedNode(focused);
       return;
@@ -1705,7 +1738,7 @@ export const ProfileSelectionScreen = {
       }
     }
 
-    if (code === 13 && this.canHoldManageProfile(currentProfileCard)) {
+    if (Platform.isTizen() && code === 13 && this.canHoldManageProfile(currentProfileCard)) {
       event?.preventDefault?.();
       if (!event?.repeat && !this.hasPendingProfileHold(currentProfileCard)) {
         this.startPendingProfileHold(currentProfileCard);
@@ -1730,12 +1763,8 @@ export const ProfileSelectionScreen = {
   },
 
   async onKeyUp(event) {
-    if (this.suppressOptionsDialogEnterUntilKeyUp) {
-      this.suppressOptionsDialogEnterUntilKeyUp = false;
-      if (Number(event?.keyCode || 0) === 13) {
-        event?.preventDefault?.();
-        return;
-      }
+    if (!Platform.isTizen()) {
+      return;
     }
     if (Number(event?.keyCode || 0) !== 13 || this.pinOverlayState || this.optionsProfileId || this.deleteProfileId || this.editorState) {
       return;
@@ -1771,6 +1800,11 @@ export const ProfileSelectionScreen = {
 
   cleanup() {
     this.cancelPendingProfileHold();
+    if (this._bgAnimRaf) {
+      cancelAnimationFrame(this._bgAnimRaf);
+      this._bgAnimRaf = null;
+    }
+    this._bgCurrentColor = null;
     if (this.pinActionMessageTimer) {
       clearTimeout(this.pinActionMessageTimer);
       this.pinActionMessageTimer = null;
@@ -1781,7 +1815,6 @@ export const ProfileSelectionScreen = {
     }
     this.pinTransitionCallback = null;
     this.suppressedFocusClick = null;
-    this.suppressOptionsDialogEnterUntilKeyUp = false;
     const container = document.getElementById("profileSelection");
     if (!container) {
       return;

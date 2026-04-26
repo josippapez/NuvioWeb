@@ -32,9 +32,6 @@ export const Router = {
   stack: [],
   historyInitialized: false,
   popstateBound: false,
-  suppressPopstateUntil: 0,
-  skipConsumeNextPopstate: false,
-  ignoreNextPopstate: false,
 
   routes: {
     home: HomeScreen,
@@ -109,20 +106,8 @@ export const Router = {
     }
     this.popstateBound = true;
     window.addEventListener("popstate", async (event) => {
-      if (this.ignoreNextPopstate) {
-        this.ignoreNextPopstate = false;
-        return;
-      }
-      if (Date.now() < Number(this.suppressPopstateUntil || 0)) {
-        if (window?.history && typeof window.history.pushState === "function") {
-          window.history.pushState({ route: this.current, params: this.currentParams }, "");
-        }
-        return;
-      }
-      const shouldSkipConsume = Boolean(this.skipConsumeNextPopstate);
-      this.skipConsumeNextPopstate = false;
       const currentScreen = this.getCurrentScreen();
-      if (!shouldSkipConsume && currentScreen?.consumeBackRequest?.()) {
+      if (currentScreen?.consumeBackRequest?.()) {
         if (window?.history && typeof window.history.pushState === "function") {
           window.history.pushState({ route: this.current, params: this.currentParams }, "");
         }
@@ -149,17 +134,6 @@ export const Router = {
         });
       }
     });
-  },
-
-  suppressNextPopstate(durationMs = 700) {
-    this.suppressPopstateUntil = Math.max(
-      Number(this.suppressPopstateUntil || 0),
-      Date.now() + Math.max(0, Number(durationMs || 0))
-    );
-  },
-
-  ignoreSinglePopstate() {
-    this.ignoreNextPopstate = true;
   },
 
   async navigate(routeName, params = {}, options = {}) {
@@ -220,10 +194,9 @@ export const Router = {
     }
   },
 
-  async back(options = {}) {
+  async back() {
     const currentScreen = this.getCurrentScreen();
-    if (!options?.skipConsume && currentScreen?.consumeBackRequest?.()) {
-      this.suppressNextPopstate();
+    if (currentScreen?.consumeBackRequest?.()) {
       return;
     }
 
@@ -233,9 +206,6 @@ export const Router = {
     }
 
     if (window?.history && typeof window.history.back === "function" && this.historyInitialized) {
-      if (options?.skipConsume) {
-        this.skipConsumeNextPopstate = true;
-      }
       window.history.back();
       return;
     }

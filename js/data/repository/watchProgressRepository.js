@@ -1,10 +1,9 @@
 import { WatchProgressStore } from "../local/watchProgressStore.js";
 import { ProfileManager } from "../../core/profile/profileManager.js";
-import { ContinueWatchingPreferences } from "../local/continueWatchingPreferences.js";
 
 const CONTINUE_WATCHING_DAYS_CAP = 60;
-const CW_PROGRESS_START_THRESHOLD = 0.02;
-const CW_PROGRESS_END_THRESHOLD = 0.90;
+const IN_PROGRESS_START_THRESHOLD = 0.02;
+const IN_PROGRESS_END_THRESHOLD = 0.85;
 
 function activeProfileId() {
   return String(ProfileManager.getActiveProfileId() || "1");
@@ -42,66 +41,42 @@ function queueWatchProgressCloudSync(delayMs = getWatchProgressSyncDebounceMs())
   }, delayMs);
 }
 
+function toProgressFraction(item = {}) {
+  const explicitPercent = Number(item.progressPercent);
+  if (Number.isFinite(explicitPercent) && explicitPercent > 0) {
+    return Math.max(0, Math.min(1, explicitPercent / 100));
+  }
+
+  const durationMs = Number(item.durationMs || 0);
+  const positionMs = Number(item.positionMs || 0);
+  if (!Number.isFinite(durationMs) || durationMs <= 0 || !Number.isFinite(positionMs) || positionMs <= 0) {
+    return 0;
+  }
+  return Math.max(0, Math.min(1, positionMs / durationMs));
+}
+
 function isSeriesType(type) {
   const normalized = String(type || "").toLowerCase();
   return normalized === "series";
 }
 
-function matchesProgressTarget(item = {}, contentId, videoId = null) {
-  const wantedContentId = String(contentId || "").trim();
-  if (!wantedContentId || String(item.contentId || "").trim() !== wantedContentId) {
-    return false;
-  }
-  if (videoId == null) {
-    return true;
-  }
-  return String(item.videoId || "") === String(videoId);
+function isInProgress(item = {}) {
+  const fraction = toProgressFraction(item);
+  return fraction >= IN_PROGRESS_START_THRESHOLD && fraction < IN_PROGRESS_END_THRESHOLD;
 }
 
-async function deleteWatchProgressFromCloud(items = []) {
-  if (!items.length) {
-    return false;
-  }
-  try {
-    const { WatchProgressSyncService } = await import("../../core/profile/watchProgressSyncService.js");
-    return WatchProgressSyncService.deleteItems(items);
-  } catch (error) {
-    console.warn("Watch progress cloud delete failed", error);
-    return false;
-  }
-}
-
-function progressFractionForContinueWatching(item = {}) {
-  const durationMs = Number(item.durationMs || 0);
-  const positionMs = Number(item.positionMs || 0);
-  if (Number.isFinite(durationMs) && durationMs > 0 && Number.isFinite(positionMs) && positionMs > 0) {
-    return Math.max(0, Math.min(1, positionMs / durationMs));
-  }
-  if (item.progressPercent != null && item.progressPercent !== "") {
-    const explicitPercent = Number(item.progressPercent);
-    if (Number.isFinite(explicitPercent)) {
-      return Math.max(0, Math.min(1, explicitPercent / 100));
-    }
-  }
-  return 0;
-}
-
-function isCompletedForContinueWatching(item = {}) {
-  return progressFractionForContinueWatching(item) >= CW_PROGRESS_END_THRESHOLD;
-}
-
-function isInProgressForContinueWatching(item = {}) {
-  const fraction = progressFractionForContinueWatching(item);
-  return fraction >= CW_PROGRESS_START_THRESHOLD && fraction < CW_PROGRESS_END_THRESHOLD;
+function isCompleted(item = {}) {
+  return toProgressFraction(item) >= IN_PROGRESS_END_THRESHOLD;
 }
 
 function shouldTreatAsInProgressForContinueWatching(item = {}) {
-  if (isInProgressForContinueWatching(item)) {
+  if (isInProgress(item)) {
     return true;
   }
-  if (isCompletedForContinueWatching(item)) {
+  if (isCompleted(item)) {
     return false;
   }
+
   const hasStartedPlayback = Number(item.positionMs || 0) > 0 || Number(item.progressPercent || 0) > 0;
   const source = String(item.source || "").toLowerCase();
   return hasStartedPlayback
@@ -142,9 +117,6 @@ function deduplicateInProgress(items = []) {
 class WatchProgressRepository {
 
   async saveProgress(progress) {
-    if (isSeriesType(progress?.contentType)) {
-      ContinueWatchingPreferences.removeDismissedNextUpKeysForContent(progress?.contentId, activeProfileId());
-    }
     WatchProgressStore.upsert({
       ...progress,
       updatedAt: progress.updatedAt || Date.now()
@@ -157,11 +129,7 @@ class WatchProgressRepository {
   }
 
   async removeProgress(contentId, videoId = null) {
-    const pid = activeProfileId();
-    const removedItems = WatchProgressStore.listForProfile(pid)
-      .filter((item) => matchesProgressTarget(item, contentId, videoId));
-    WatchProgressStore.remove(contentId, videoId, pid);
-    await deleteWatchProgressFromCloud(removedItems);
+    WatchProgressStore.remove(contentId, videoId, activeProfileId());
     queueWatchProgressCloudSync();
   }
 

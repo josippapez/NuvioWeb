@@ -26,7 +26,6 @@ const defaultEnvFileContents = `(function defineNuvioEnv() {
     TV_LOGIN_REDIRECT_BASE_URL: "",
     YOUTUBE_PROXY_URL: "youtube-proxy.html",
     ADDON_REMOTE_BASE_URL: "",
-    WEBOS_SERVICE_ID: "",
     ENABLE_REMOTE_WRAPPER_MODE: false,
     PREFERRED_PLAYBACK_ORDER: ["native-hls", "hls.js", "dash.js", "native-file", "platform-avplay"],
     TMDB_API_KEY: ""
@@ -35,7 +34,7 @@ const defaultEnvFileContents = `(function defineNuvioEnv() {
 `;
 
 async function buildCSS() {
-  console.log("processing CSS with PostCSS (legacy support)...");
+  console.log("processing CSS with PostCSS (legacy upport)...");
   const cssDir = path.join(rootDir, "css");
   const files = await readdir(cssDir);
   const cssFiles = files.filter(f => f.endsWith(".css"));
@@ -146,6 +145,7 @@ async function buildBundle() {
   await rm(tempBundlePath).catch(() => { });
   console.log("bundle build complete");
 }
+
 async function runBuild() {
   try {
     console.log("cleaning dist directory...");

@@ -9,8 +9,6 @@ import { resolvePlatformAvplayEngine } from "./engines/platformAvplayEngine.js";
 import { WebOsLunaService } from "../../platform/webos/webosLunaService.js";
 import { loadStreamingLibs } from "../../runtime/loadStreamingLibs.js";
 
-const MIN_PROGRESS_SYNC_DURATION_MS = 60000;
-
 export const PlayerController = {
 
   video: null,
@@ -55,9 +53,6 @@ export const PlayerController = {
   webosDeviceInfoPromise: null,
   webosUnsupportedAudioCodecs: new Set(["dts", "truehd"]),
   viewportSyncHandler: null,
-  avplayDisplayRect: null,
-  avplayDisplayMethod: "PLAYER_DISPLAY_MODE_FULL_SCREEN",
-  startupAudioGateActive: false,
 
   isExpectedPlayInterruption(error) {
     const message = String(error?.message || "").toLowerCase();
@@ -382,139 +377,6 @@ export const PlayerController = {
     }, 1000);
   },
 
-  applyStartupAudioGateToVideo() {
-    if (!this.video) {
-      return;
-    }
-    try {
-      const gated = Boolean(this.startupAudioGateActive);
-      this.video.muted = gated;
-      this.video.defaultMuted = gated;
-      if (!gated && (!Number.isFinite(Number(this.video.volume)) || Number(this.video.volume) <= 0)) {
-        this.video.volume = 1;
-      }
-    } catch (_) {
-      // Ignore unsupported volume/mute operations.
-    }
-  },
-
-  pauseNativePlaybackForStartupGate() {
-    if (!this.video || this.isUsingAvPlay() || !this.startupAudioGateActive) {
-      return;
-    }
-    try {
-      this.video.pause();
-      this.isPlaying = false;
-    } catch (_) {
-      // Ignore pause failures while the media element is still loading.
-    }
-  },
-
-  resumeNativePlaybackAfterStartupGate() {
-    if (!this.video || this.isUsingAvPlay()) {
-      return;
-    }
-    try {
-      const playPromise = this.video.play();
-      if (playPromise && typeof playPromise.catch === "function") {
-        playPromise.catch((error) => {
-          if (this.isExpectedPlayInterruption(error)) {
-            return;
-          }
-          console.warn("Playback start after startup gate rejected", error);
-        });
-      }
-      this.isPlaying = true;
-    } catch (error) {
-      if (!this.isExpectedPlayInterruption(error)) {
-        console.warn("Playback start after startup gate rejected", error);
-      }
-    }
-  },
-
-  handleNativePlayStartedUnderStartupGate(playPromise = null) {
-    if (!this.startupAudioGateActive || this.isUsingAvPlay()) {
-      return playPromise;
-    }
-    if (playPromise && typeof playPromise.then === "function") {
-      playPromise.then(() => {
-        this.pauseNativePlaybackForStartupGate();
-      }).catch(() => {
-        // The normal playback-start rejection handler reports real failures.
-      });
-      return playPromise;
-    }
-    this.pauseNativePlaybackForStartupGate();
-    return playPromise;
-  },
-
-  setStartupAudioGate(active, { resume = true } = {}) {
-    const shouldGate = Boolean(active);
-    const wasGated = Boolean(this.startupAudioGateActive);
-    this.startupAudioGateActive = shouldGate;
-    this.applyStartupAudioGateToVideo();
-
-    if (shouldGate) {
-      if (this.isUsingAvPlay() && this.isPlaying) {
-        const avplay = this.getAvPlay();
-        try {
-          avplay?.pause?.();
-          this.isPlaying = false;
-          this.stopAvPlayTickTimer();
-        } catch (_) {
-          // Ignore AVPlay pause failures while replacing the source.
-        }
-      }
-      return;
-    }
-
-    if (!resume || !wasGated) {
-      return;
-    }
-    if (this.isUsingAvPlay()) {
-      if (this.avplayReady) {
-        this.startPreparedAvPlayPlayback();
-      }
-      return;
-    }
-    this.resumeNativePlaybackAfterStartupGate();
-  },
-
-  startPreparedAvPlayPlayback({ syncTracks = true } = {}) {
-    const avplay = this.getAvPlay();
-    if (!avplay || !this.isUsingAvPlay()) {
-      return false;
-    }
-    try {
-      avplay.play?.();
-      this.isPlaying = true;
-      this.startAvPlayTickTimer();
-      this.emitVideoEvent("playing", { playbackEngine: this.playbackEngine });
-      setTimeout(() => {
-        this.applyPendingAvPlayAudioTrackSelection();
-      }, 0);
-      setTimeout(() => {
-        if (!this.isUsingAvPlay()) {
-          return;
-        }
-        this.applyPendingAvPlayAudioTrackSelection();
-        if (syncTracks) {
-          this.syncAvPlayTrackInfo({ force: true });
-          this.emitVideoEvent("avplaytrackschanged", { playbackEngine: this.playbackEngine });
-        }
-      }, syncTracks ? 500 : 300);
-      return true;
-    } catch (error) {
-      this.lastPlaybackErrorCode = this.mapAvPlayErrorToMediaCode(error?.name || error?.message || error);
-      this.isPlaying = false;
-      this.emitVideoEvent("error", {
-        playbackEngine: this.playbackEngine,
-        mediaErrorCode: this.lastPlaybackErrorCode
-      });
-      return false;
-    }
-  },
-
   refreshAvPlayTimeline() {
     if (!this.isUsingAvPlay()) {
       return;
@@ -699,17 +561,10 @@ export const PlayerController = {
       .map((track, index) => {
         const trackIndex = Number(track?.index);
         const normalizedTrackIndex = Number.isFinite(trackIndex) ? trackIndex : index;
-        const extraInfo = this.parseAvPlayExtraInfo(track.extra_info || track.extraInfo || null) || {};
-        const forcedValue = this.pickAvPlayExtraValue(extraInfo, [
-          "forced",
-          "is_forced"
-        ]);
         return {
           id: `avplay-sub-${normalizedTrackIndex}`,
           label: this.pickAvPlayTrackLabel(track, index, "Subtitle"),
           language: this.pickAvPlayTrackLanguage(track),
-          forced: /^(1|true|yes)$/i.test(forcedValue),
-          extraInfo,
           avplayTrackIndex: normalizedTrackIndex
         };
       });
@@ -907,60 +762,6 @@ export const PlayerController = {
     }
   },
 
-  getAvPlayVideoDimensions() {
-    const avplay = this.getAvPlay();
-    if (!avplay || typeof avplay.getCurrentStreamInfo !== "function") {
-      return null;
-    }
-    let streams = [];
-    try {
-      const value = avplay.getCurrentStreamInfo();
-      streams = Array.isArray(value) ? value : [];
-    } catch (_) {
-      streams = [];
-    }
-    const videoTrack = streams.find((track) => this.normalizeAvPlayTrackType(track?.type) === "VIDEO") || null;
-    if (!videoTrack) {
-      return null;
-    }
-    const extraInfo = this.parseAvPlayExtraInfo(videoTrack.extra_info || videoTrack.extraInfo || null) || {};
-    const widthCandidates = [
-      videoTrack.width,
-      videoTrack.Width,
-      videoTrack.videoWidth,
-      extraInfo.width,
-      extraInfo.Width,
-      extraInfo.videoWidth,
-      extraInfo.video_width
-    ];
-    const heightCandidates = [
-      videoTrack.height,
-      videoTrack.Height,
-      videoTrack.videoHeight,
-      extraInfo.height,
-      extraInfo.Height,
-      extraInfo.videoHeight,
-      extraInfo.video_height
-    ];
-    let width = widthCandidates.map(Number).find((value) => Number.isFinite(value) && value > 0) || 0;
-    let height = heightCandidates.map(Number).find((value) => Number.isFinite(value) && value > 0) || 0;
-    if (!width || !height) {
-      const resolutionText = String(
-        videoTrack.resolution
-        || videoTrack.Resolution
-        || extraInfo.resolution
-        || extraInfo.Resolution
-        || ""
-      );
-      const match = resolutionText.match(/(\d{2,5})\s*[xX]\s*(\d{2,5})/);
-      if (match) {
-        width = Number(match[1]);
-        height = Number(match[2]);
-      }
-    }
-    return width > 0 && height > 0 ? { width, height } : null;
-  },
-
   mapAvPlayErrorToMediaCode(errorValue) {
     const errorText = String(errorValue || "").toLowerCase();
     if (!errorText) {
@@ -975,102 +776,24 @@ export const PlayerController = {
     return 4;
   },
 
-  getPlayerViewportSize() {
-    const playerRect = this.video?.parentElement?.getBoundingClientRect?.()
-      || document.getElementById("player")?.getBoundingClientRect?.()
-      || null;
-    const playerWidth = Number(playerRect?.width || 0);
-    const playerHeight = Number(playerRect?.height || 0);
-    if (Number.isFinite(playerWidth) && playerWidth > 0 && Number.isFinite(playerHeight) && playerHeight > 0) {
-      return {
-        width: Math.max(1, Math.round(playerWidth)),
-        height: Math.max(1, Math.round(playerHeight))
-      };
-    }
-    const windowWidth = Number(window.innerWidth || 0);
-    const windowHeight = Number(window.innerHeight || 0);
-    const documentWidth = Number(document.documentElement?.clientWidth || 0);
-    const documentHeight = Number(document.documentElement?.clientHeight || 0);
-    const visualViewportWidth = Number(globalThis.visualViewport?.width || 0);
-    const visualViewportHeight = Number(globalThis.visualViewport?.height || 0);
-    const screenWidth = Number(globalThis.screen?.width || 0);
-    const screenHeight = Number(globalThis.screen?.height || 0);
-    const width = [windowWidth, documentWidth, visualViewportWidth, screenWidth]
-      .find((value) => Number.isFinite(value) && value > 0);
-    const height = [windowHeight, documentHeight, visualViewportHeight, screenHeight]
-      .find((value) => Number.isFinite(value) && value > 0);
-    return {
-      width: Math.max(1, Math.round(width || 1920)),
-      height: Math.max(1, Math.round(height || 1080))
-    };
-  },
-
-  getCssPlayerViewportSize() {
-    const playerSize = this.getPlayerViewportSize();
-    const documentWidth = Number(document.documentElement?.clientWidth || 0);
-    const documentHeight = Number(document.documentElement?.clientHeight || 0);
-    const windowWidth = Number(window.innerWidth || 0);
-    const windowHeight = Number(window.innerHeight || 0);
-    const widthCandidates = [playerSize.width, documentWidth, windowWidth]
-      .filter((value) => Number.isFinite(value) && value > 0);
-    const heightCandidates = [playerSize.height, documentHeight, windowHeight]
-      .filter((value) => Number.isFinite(value) && value > 0);
-    return {
-      width: Math.max(1, Math.round(widthCandidates[0] || 1920)),
-      height: Math.max(1, Math.round(heightCandidates[0] || 1080))
-    };
-  },
-
-  getAvPlayViewportSize() {
-    if (Platform.isTizen()) {
-      return this.getCssPlayerViewportSize();
-    }
-    const documentWidth = Number(document.documentElement?.clientWidth || 0);
-    const documentHeight = Number(document.documentElement?.clientHeight || 0);
-    const screenWidth = Number(globalThis.screen?.width || 0);
-    const screenHeight = Number(globalThis.screen?.height || 0);
-    const windowWidth = Number(window.innerWidth || 0);
-    const windowHeight = Number(window.innerHeight || 0);
-    const webOsMajorVersion = Platform.isWebOS() ? Number(Platform.getWebOsMajorVersion() || 0) : 0;
-    if (webOsMajorVersion > 0 && webOsMajorVersion <= 6) {
-      return this.getPlayerViewportSize();
-    }
-    return {
-      width: Math.max(1, Math.round(Math.max(windowWidth, documentWidth, screenWidth, 1920))),
-      height: Math.max(1, Math.round(Math.max(windowHeight, documentHeight, screenHeight, 1080)))
-    };
-  },
-
-  setAvPlayDisplayRect(rect = null, displayMethod = null) {
+  setAvPlayDisplayRect() {
     const avplay = this.getAvPlay();
     if (!avplay) {
       return;
     }
-    const viewport = this.getAvPlayViewportSize();
-    if (rect) {
-      this.avplayDisplayRect = {
-        x: Math.round(Number(rect.x || 0)),
-        y: Math.round(Number(rect.y || 0)),
-        width: Math.max(1, Math.round(Number(rect.width || viewport.width))),
-        height: Math.max(1, Math.round(Number(rect.height || viewport.height)))
-      };
-    }
-    if (displayMethod) {
-      this.avplayDisplayMethod = String(displayMethod);
-    }
-    const targetRect = this.avplayDisplayRect || {
-      x: 0,
-      y: 0,
-      width: viewport.width,
-      height: viewport.height
-    };
+    const documentWidth = Number(document.documentElement?.clientWidth || 0);
+    const documentHeight = Number(document.documentElement?.clientHeight || 0);
+    const screenWidth = Number(globalThis.screen?.width || 0);
+    const screenHeight = Number(globalThis.screen?.height || 0);
+    const width = Math.max(1, Math.round(Math.max(Number(window.innerWidth || 0), documentWidth, screenWidth, 1920)));
+    const height = Math.max(1, Math.round(Math.max(Number(window.innerHeight || 0), documentHeight, screenHeight, 1080)));
     try {
-      avplay.setDisplayRect?.(targetRect.x, targetRect.y, targetRect.width, targetRect.height);
+      avplay.setDisplayRect?.(0, 0, width, height);
     } catch (_) {
       // Ignore display-rect failures.
     }
     try {
-      avplay.setDisplayMethod?.(this.avplayDisplayMethod || "PLAYER_DISPLAY_MODE_FULL_SCREEN");
+      avplay.setDisplayMethod?.("PLAYER_DISPLAY_MODE_FULL_SCREEN");
     } catch (_) {
       // Ignore display-method failures.
     }
@@ -1168,17 +891,12 @@ export const PlayerController = {
           this.avplayEnded = true;
           this.isPlaying = false;
           this.stopAvPlayTickTimer();
-          this.refreshAvPlayTimeline();
-          const completedDurationMs = Number(this.avplayDurationMs || 0);
-          if (Number.isFinite(completedDurationMs) && completedDurationMs > 0) {
-            this.avplayCurrentTimeMs = Math.max(Number(this.avplayCurrentTimeMs || 0), completedDurationMs);
-          }
-          this.emitVideoEvent("ended", { playbackEngine: this.playbackEngine });
           try {
             avplay.stop?.();
           } catch (_) {
             // Ignore stream-complete stop failures.
           }
+          this.emitVideoEvent("ended", { playbackEngine: this.playbackEngine });
         },
         onerror: (errorValue) => {
           this.avplayReady = false;
@@ -1208,10 +926,30 @@ export const PlayerController = {
       this.emitVideoEvent("loadeddata", { playbackEngine: this.playbackEngine });
       this.emitVideoEvent("canplay", { playbackEngine: this.playbackEngine });
       this.emitVideoEvent("avplaytrackschanged", { playbackEngine: this.playbackEngine });
-      if (this.startupAudioGateActive) {
-        return;
+      try {
+        avplay.play?.();
+        this.isPlaying = true;
+        this.startAvPlayTickTimer();
+        this.emitVideoEvent("playing", { playbackEngine: this.playbackEngine });
+        setTimeout(() => {
+          this.applyPendingAvPlayAudioTrackSelection();
+        }, 0);
+        setTimeout(() => {
+          if (!this.isUsingAvPlay()) {
+            return;
+          }
+          this.applyPendingAvPlayAudioTrackSelection();
+          this.syncAvPlayTrackInfo({ force: true });
+          this.emitVideoEvent("avplaytrackschanged", { playbackEngine: this.playbackEngine });
+        }, 500);
+      } catch (error) {
+        this.lastPlaybackErrorCode = this.mapAvPlayErrorToMediaCode(error?.name || error?.message || error);
+        this.isPlaying = false;
+        this.emitVideoEvent("error", {
+          playbackEngine: this.playbackEngine,
+          mediaErrorCode: this.lastPlaybackErrorCode
+        });
       }
-      this.startPreparedAvPlayPlayback({ syncTracks: true });
     };
 
     const onPrepareError = (errorValue) => {
@@ -1718,9 +1456,7 @@ export const PlayerController = {
     });
 
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
-      this.applyStartupAudioGateToVideo();
       const playPromise = this.video.play();
-      this.handleNativePlayStartedUnderStartupGate(playPromise);
       if (playPromise && typeof playPromise.catch === "function") {
         playPromise.catch((error) => {
           if (this.isExpectedPlayInterruption(error)) {
@@ -2244,9 +1980,7 @@ export const PlayerController = {
         if (playToken !== null && playToken !== this.playRequestToken) {
           return null;
         }
-        this.applyStartupAudioGateToVideo();
-        const playPromise = this.video.play();
-        return this.handleNativePlayStartedUnderStartupGate(playPromise);
+        return this.video.play();
       })
       .then((playPromise) => {
         if (!playPromise || typeof playPromise.catch !== "function") {
@@ -2388,8 +2122,19 @@ export const PlayerController = {
 
     if (!this.lifecycleBound) {
       this.lifecycleBound = true;
-      this.lifecycleFlushHandler = () => {
-        this.flushCurrentProgress({ forceCloudSync: true });
+        this.lifecycleFlushHandler = () => {
+          const context = this.createProgressContext();
+          if (!context.itemId) {
+            return;
+          }
+          this.flushProgress(
+            Math.floor(this.getCurrentTimeSeconds() * 1000),
+            Math.floor(this.getDurationSeconds() * 1000),
+            false,
+            context
+          ).finally(() => {
+            this.pushProgressIfDue(true);
+          });
       };
       this.visibilityFlushHandler = () => {
         if (document.visibilityState === "hidden") {
@@ -2405,9 +2150,15 @@ export const PlayerController = {
   async play(url, { itemId = null, itemType = "movie", videoId = null, season = null, episode = null, title = null, poster = null, background = null, episodeTitle = null, requestHeaders = {}, mediaSourceType = null, forceEngine = null } = {}) {
     if (!this.video) return;
 
-    await this.flushCurrentProgress({ allowCloudSync: false });
-
-    this.applyStartupAudioGateToVideo();
+    try {
+      this.video.muted = false;
+      this.video.defaultMuted = false;
+      if (!Number.isFinite(Number(this.video.volume)) || Number(this.video.volume) <= 0) {
+        this.video.volume = 1;
+      }
+    } catch (_) {
+      // Ignore unsupported volume/mute operations.
+    }
 
     this.currentItemId = itemId;
     this.currentItemType = itemType;
@@ -2561,8 +2312,6 @@ export const PlayerController = {
   pause() {
     if (!this.video) return;
 
-    this.flushCurrentProgress({ forceCloudSync: true });
-
     if (this.isUsingAvPlay()) {
       const avplay = this.getAvPlay();
       if (!avplay) {
@@ -2584,12 +2333,6 @@ export const PlayerController = {
 
   resume() {
     if (!this.video) return;
-
-    this.flushCurrentProgress({ forceCloudSync: false });
-    if (this.startupAudioGateActive) {
-      this.applyStartupAudioGateToVideo();
-      return;
-    }
 
     if (this.isUsingAvPlay()) {
       const avplay = this.getAvPlay();
@@ -2628,8 +2371,15 @@ export const PlayerController = {
   stop() {
     if (!this.video) return;
 
-    const flushPromise = this.flushCurrentProgress({ forceCloudSync: true });
-    this.setStartupAudioGate(false, { resume: false });
+    const context = this.createProgressContext();
+    this.flushProgress(
+      Math.floor(this.getCurrentTimeSeconds() * 1000),
+      Math.floor(this.getDurationSeconds() * 1000),
+      false,
+      context
+    ).finally(() => {
+      this.pushProgressIfDue(true);
+    });
 
     this.video.pause();
     this.teardownAdaptiveInstances();
@@ -2661,8 +2411,6 @@ export const PlayerController = {
       clearInterval(this.progressSaveTimer);
       this.progressSaveTimer = null;
     }
-
-    return flushPromise;
   },
 
   createProgressContext() {
@@ -2679,26 +2427,7 @@ export const PlayerController = {
     };
   },
 
-  async flushCurrentProgress({ forceCloudSync = false, allowCloudSync = true } = {}) {
-    const context = this.createProgressContext();
-    if (!context.itemId) {
-      return false;
-    }
-
-    await this.flushProgress(
-      Math.floor(this.getCurrentTimeSeconds() * 1000),
-      Math.floor(this.getDurationSeconds() * 1000),
-      false,
-      context,
-      { allowCloudSync: allowCloudSync && !forceCloudSync }
-    );
-    if (forceCloudSync) {
-      await this.pushProgressIfDue(true);
-    }
-    return true;
-  },
-
-  async flushProgress(positionMs, durationMs, clear = false, context = null, { allowCloudSync = true } = {}) {
+  async flushProgress(positionMs, durationMs, clear = false, context = null) {
     const active = context || this.createProgressContext();
     if (!active?.itemId) {
       return;
@@ -2707,17 +2436,7 @@ export const PlayerController = {
     const safePosition = Number(positionMs || 0);
     const safeDuration = Number(durationMs || 0);
     const hasFiniteDuration = Number.isFinite(safeDuration) && safeDuration > 0;
-    const hasReachedMinimumSyncPosition = Number.isFinite(safePosition)
-      && safePosition >= MIN_PROGRESS_SYNC_DURATION_MS;
-    const isCompleted = hasFiniteDuration && safePosition / safeDuration >= 0.90;
-    if (!clear && !isCompleted) {
-      if (hasFiniteDuration && safeDuration < MIN_PROGRESS_SYNC_DURATION_MS) {
-        return false;
-      }
-      if (!hasFiniteDuration && !hasReachedMinimumSyncPosition) {
-        return false;
-      }
-    }
+    const isCompleted = hasFiniteDuration && safePosition / safeDuration > 0.95;
 
     if (isCompleted) {
       await watchedItemsRepository.mark({
@@ -2732,14 +2451,12 @@ export const PlayerController = {
 
     if (clear || isCompleted) {
       await watchProgressRepository.removeProgress(active.itemId, active.videoId || null);
-      if (!allowCloudSync) {
-        return true;
-      }
-      return this.pushProgressIfDue(true);
+      this.pushProgressIfDue(true);
+      return;
     }
 
     if (!Number.isFinite(safePosition) || safePosition <= 0) {
-      return false;
+      return;
     }
 
     await watchProgressRepository.saveProgress({
@@ -2755,21 +2472,17 @@ export const PlayerController = {
       positionMs: Math.max(0, Math.trunc(safePosition)),
       durationMs: hasFiniteDuration ? Math.max(0, Math.trunc(safeDuration)) : 0
     });
-    if (!allowCloudSync) {
-      return true;
-    }
-    return this.pushProgressIfDue(false);
+    this.pushProgressIfDue(false);
   },
 
   pushProgressIfDue(force = false) {
     const now = Date.now();
     if (!force && (now - Number(this.lastProgressPushAt || 0)) < 30000) {
-      return Promise.resolve(false);
+      return;
     }
     this.lastProgressPushAt = now;
-    return WatchProgressSyncService.push().catch((error) => {
+    WatchProgressSyncService.push().catch((error) => {
       console.warn("Watch progress auto push failed", error);
-      return false;
     });
   }
 

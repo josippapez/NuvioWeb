@@ -1,9 +1,13 @@
 import { httpRequest } from "../../../core/network/httpClient.js";
 
+function trimSlash(url) {
+  return String(url || "").replace(/\/+$/, "");
+}
+
 export const AddonApi = {
 
-  async getManifest(url) {
-    return httpRequest(String(url || "").trim(), {
+  async getManifest(baseUrl) {
+    return httpRequest(`${trimSlash(baseUrl)}/manifest.json`, {
       includeSessionAuth: false
     });
   },

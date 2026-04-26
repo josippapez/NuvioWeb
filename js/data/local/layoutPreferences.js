@@ -21,8 +21,7 @@ const DEFAULTS = {
   collapseSidebar: false,
   modernSidebar: false,
   modernSidebarBlur: false,
-  hideUnreleasedContent: false,
-  showUnairedNextUp: true
+  hideUnreleasedContent: false
 };
 
 function normalizeLayoutPreferences(value = {}) {
@@ -45,7 +44,6 @@ function normalizeLayoutPreferences(value = {}) {
     posterCardWidthDp: Math.max(72, Number(merged.posterCardWidthDp ?? 126) || 126),
     posterCardCornerRadiusDp: Math.max(0, Number(merged.posterCardCornerRadiusDp ?? 12) || 12),
     detailPageTrailerButtonEnabled: Boolean(merged.detailPageTrailerButtonEnabled),
-    showUnairedNextUp: merged.showUnairedNextUp !== false,
     collapseSidebar: modernSidebar ? false : Boolean(merged.collapseSidebar),
     modernSidebar,
     modernSidebarBlur: modernSidebar ? Boolean(merged.modernSidebarBlur) : Boolean(merged.modernSidebarBlur)

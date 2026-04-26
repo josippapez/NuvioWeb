@@ -1,9 +1,6 @@
 import { normalizeKeyEvent, isBackEvent } from "../sharedKeys.js";
 import { WebOSPlayerExtensions } from "../webos/webosPlayerExtensions.js";
-import {
-  isWebOsCompanionServiceAvailable,
-  requestWebOsCompanionService
-} from "../webos/webosCompanionService.js";
+import { WebOsLunaService } from "../webos/webosLunaService.js";
 
 function getAvplayApi() {
   const webapis = globalThis.webapis;
@@ -18,11 +15,11 @@ export const webosAdapter = {
   name: "webos",
 
   init() {
-    if (!isWebOsCompanionServiceAvailable()) {
+    if (!WebOsLunaService.isAvailable()) {
       return;
     }
 
-    requestWebOsCompanionService({
+    WebOsLunaService.request("luna://com.nuvio.lg.service", {
       method: "ping",
       parameters: {}
     }).catch((error) => {
@@ -37,11 +34,11 @@ export const webosAdapter = {
   },
 
   isBackEvent(event) {
-    return isBackEvent(event, [461, 10009, 27, 8]);
+    return isBackEvent(event, [461, 27, 8]);
   },
 
   normalizeKey(event) {
-    return normalizeKeyEvent(event, [461, 10009, 27, 8]);
+    return normalizeKeyEvent(event, [461, 27, 8]);
   },
 
   getDeviceLabel() {

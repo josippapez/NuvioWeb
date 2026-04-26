@@ -2,20 +2,14 @@ import { AuthManager } from "../auth/authManager.js";
 import { watchProgressRepository } from "../../data/repository/watchProgressRepository.js";
 import { SupabaseApi } from "../../data/remote/supabase/supabaseApi.js";
 import { ProfileManager } from "./profileManager.js";
-import { LocalStore } from "../storage/localStore.js";
 
+const TABLE = "tv_watch_progress";
+const FALLBACK_TABLE = "watch_progress";
 const PULL_RPC = "sync_pull_watch_progress";
-const PUSH_RPC = "sync_push_watch_progress";
-const DELETE_RPC = "sync_delete_watch_progress";
 const SYNTHETIC_EPISODE_VIDEO_PREFIX = "__nuvio_episode__:";
 const PUSH_RETRY_BACKOFF_MS = 120000;
-const SYNC_STATE_KEY = "watchProgressSyncState";
-const MIN_PROGRESS_SYNC_DURATION_MS = 60000;
-const MAX_AMBIGUOUS_SECONDS_PROGRESS_VALUE = 8 * 60 * 60;
-const MAX_REASONABLE_PROGRESS_DURATION_MS = 24 * 60 * 60 * 1000;
 
 let activePushPromise = null;
-let pushAgainRequested = false;
 let lastSuccessfulPushSignature = "";
 let lastFailedPushSignature = "";
 let lastFailedPushAt = 0;
@@ -28,112 +22,55 @@ function progressKey(item = {}) {
   return `${contentId}::${videoId}::${season}::${episode}`;
 }
 
-function normalizeProgressItems(items = []) {
-  const byKey = new Map();
-  (Array.isArray(items) ? items : [])
-    .filter((item) => Boolean(item?.contentId))
-    .forEach((item) => {
-      const key = progressKey(item);
-      const existing = byKey.get(key);
-      if (!existing || Number(item.updatedAt || 0) > Number(existing.updatedAt || 0)) {
-        byKey.set(key, item);
-      }
-    });
-  return Array.from(byKey.values())
-    .sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0));
-}
+function mergeProgressItems(localItems = [], remoteItems = []) {
+  const localByKey = new Map(
+    (Array.isArray(localItems) ? localItems : [])
+      .filter((item) => Boolean(item?.contentId))
+      .map((item) => [progressKey(item), item])
+  );
+  const remoteByKey = new Map(
+    (Array.isArray(remoteItems) ? remoteItems : [])
+      .filter((item) => Boolean(item?.contentId))
+      .map((item) => [progressKey(item), item])
+  );
 
-function progressContentSignature(item = {}) {
-  return JSON.stringify([
-    String(item.contentId || ""),
-    String(item.contentType || "movie"),
-    String(item.videoId || ""),
-    Number(item.season || 0),
-    Number(item.episode || 0),
-    Number(item.positionMs || 0),
-    Number(item.durationMs || 0),
-    Number(item.updatedAt || 0)
-  ]);
-}
+  if (!remoteByKey.size) {
+    return Array.from(localByKey.values())
+      .sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0));
+  }
 
-function itemsByProgressKey(items = []) {
-  return new Map(normalizeProgressItems(items).map((item) => [progressKey(item), item]));
-}
-
-function readSyncState() {
-  const state = LocalStore.get(SYNC_STATE_KEY, {});
-  return state && typeof state === "object" ? state : {};
-}
-
-function readBaselineItems(profileId) {
-  const state = readSyncState();
-  const profileState = state[String(profileId)] || {};
-  return normalizeProgressItems(profileState.remoteSnapshot || []);
-}
-
-function writeBaselineItems(profileId, items = []) {
-  const state = readSyncState();
-  state[String(profileId)] = {
-    remoteSnapshot: normalizeProgressItems(items),
-    updatedAt: Date.now()
-  };
-  LocalStore.set(SYNC_STATE_KEY, state);
-}
-
-function mergeProgressItems(localItems = [], remoteItems = [], baselineItems = []) {
-  const localByKey = itemsByProgressKey(localItems);
-  const remoteByKey = itemsByProgressKey(remoteItems);
-  const baselineByKey = itemsByProgressKey(baselineItems);
-  const keys = new Set([
-    ...localByKey.keys(),
-    ...remoteByKey.keys(),
-    ...baselineByKey.keys()
-  ]);
   const merged = [];
-
-  keys.forEach((key) => {
-    const localItem = localByKey.get(key) || null;
-    const remoteItem = remoteByKey.get(key) || null;
-    const baselineItem = baselineByKey.get(key) || null;
-
-    if (localItem && remoteItem) {
-      const localChanged = !baselineItem || progressContentSignature(localItem) !== progressContentSignature(baselineItem);
-      const remoteChanged = !baselineItem || progressContentSignature(remoteItem) !== progressContentSignature(baselineItem);
-      if (localChanged && !remoteChanged) {
-        merged.push(localItem);
-        return;
-      }
-      if (remoteChanged && !localChanged) {
-        merged.push(remoteItem);
-        return;
-      }
-      merged.push(Number(localItem.updatedAt || 0) > Number(remoteItem.updatedAt || 0) ? localItem : remoteItem);
+  remoteByKey.forEach((remoteItem, key) => {
+    const localItem = localByKey.get(key);
+    if (!localItem) {
+      merged.push(remoteItem);
       return;
     }
-
-    if (remoteItem && !localItem) {
-      const remoteChanged = baselineItem && progressContentSignature(remoteItem) !== progressContentSignature(baselineItem);
-      if (!baselineItem || remoteChanged) {
-        merged.push(remoteItem);
-      }
-      return;
-    }
-
-    if (localItem && !remoteItem) {
-      const localChanged = baselineItem && progressContentSignature(localItem) !== progressContentSignature(baselineItem);
-      if (!baselineItem || localChanged) {
-        merged.push(localItem);
-      }
-    }
+    const remoteUpdatedAt = Number(remoteItem.updatedAt || 0);
+    const localUpdatedAt = Number(localItem.updatedAt || 0);
+    merged.push(remoteUpdatedAt > localUpdatedAt ? remoteItem : localItem);
   });
 
-  return normalizeProgressItems(merged);
+  return merged.sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0));
+}
+
+function shouldTryLegacyTable(error) {
+  if (!error) {
+    return false;
+  }
+  if (error.status === 404) {
+    return true;
+  }
+  if (typeof error.code === "string" && error.code === "PGRST205") {
+    return true;
+  }
+  const message = String(error.message || "");
+  return message.includes("PGRST205") || message.includes("Could not find the table");
 }
 
 function mapProgressRow(row = {}) {
   const contentId = row.content_id || row.contentId || "";
   const contentType = row.content_type || row.contentType || "movie";
-  const source = String(row.source || "").trim();
   const updatedAtRaw = row.updated_at ?? row.last_watched ?? row.lastWatched ?? null;
   const updatedAt = (() => {
     if (updatedAtRaw == null) {
@@ -146,35 +83,24 @@ function mapProgressRow(row = {}) {
     const parsed = new Date(updatedAtRaw).getTime();
     return Number.isFinite(parsed) ? parsed : Date.now();
   })();
-  const hasPositionMs = row.position_ms != null || row.positionMs != null;
-  const hasDurationMs = row.duration_ms != null || row.durationMs != null;
-  const positionMsRaw = row.position_ms ?? row.positionMs ?? row.position ?? 0;
-  const durationMsRaw = row.duration_ms ?? row.durationMs ?? row.duration ?? 0;
-  const progressPercentRaw = row.progress_percent ?? row.progressPercent ?? null;
-  const progressPercent = Number(progressPercentRaw);
+  const positionMsRaw = row.position_ms ?? row.position ?? 0;
+  const durationMsRaw = row.duration_ms ?? row.duration ?? 0;
   const seasonRaw = row.season ?? row.season_number ?? null;
   const episodeRaw = row.episode ?? row.episode_number ?? null;
   const seasonNum = Number(seasonRaw);
   const episodeNum = Number(episodeRaw);
   const rawVideoId = row.video_id || row.videoId || null;
   const normalizedVideoId = typeof rawVideoId === "string" && rawVideoId.trim() === contentId ? null : rawVideoId;
-  const toMilliseconds = (value) => {
+  const toMs = (value) => {
     const n = Number(value || 0);
     if (!Number.isFinite(n) || n <= 0) {
       return 0;
     }
-    return Math.trunc(n);
-  };
-  const normalizeAmbiguousRemoteTime = (value) => {
-    const n = Number(value || 0);
-    if (!Number.isFinite(n) || n <= 0) {
-      return 0;
+    if (n > 1_000_000_000_000) {
+      return n;
     }
-    return Math.trunc(n > MAX_AMBIGUOUS_SECONDS_PROGRESS_VALUE ? n : n * 1000);
+    return n < 1_000_000 ? Math.trunc(n * 1000) : Math.trunc(n);
   };
-  const positionMs = hasPositionMs ? toMilliseconds(positionMsRaw) : normalizeAmbiguousRemoteTime(positionMsRaw);
-  const durationMs = hasDurationMs ? toMilliseconds(durationMsRaw) : normalizeAmbiguousRemoteTime(durationMsRaw);
-  const normalizedTimes = normalizeInflatedProgressTimes(positionMs, durationMs);
   return {
     contentId,
     contentType,
@@ -183,30 +109,9 @@ function mapProgressRow(row = {}) {
       : normalizedVideoId,
     season: Number.isFinite(seasonNum) && seasonNum > 0 ? seasonNum : null,
     episode: Number.isFinite(episodeNum) && episodeNum > 0 ? episodeNum : null,
-    positionMs: normalizedTimes.positionMs,
-    durationMs: normalizedTimes.durationMs,
-    progressPercent: Number.isFinite(progressPercent) ? Math.max(0, Math.min(100, progressPercent)) : null,
-    source: source || "local",
+    positionMs: toMs(positionMsRaw),
+    durationMs: toMs(durationMsRaw),
     updatedAt: Number.isFinite(updatedAt) ? updatedAt : Date.now()
-  };
-}
-
-function normalizeInflatedProgressTimes(positionMs = 0, durationMs = 0) {
-  const position = Number(positionMs || 0);
-  const duration = Number(durationMs || 0);
-  if (
-    Number.isFinite(duration)
-    && duration > MAX_REASONABLE_PROGRESS_DURATION_MS
-    && (duration / 1000) <= MAX_REASONABLE_PROGRESS_DURATION_MS
-  ) {
-    return {
-      positionMs: Number.isFinite(position) && position > 0 ? Math.trunc(position / 1000) : 0,
-      durationMs: Math.trunc(duration / 1000)
-    };
-  }
-  return {
-    positionMs: Number.isFinite(position) && position > 0 ? Math.trunc(position) : 0,
-    durationMs: Number.isFinite(duration) && duration > 0 ? Math.trunc(duration) : 0
   };
 }
 
@@ -216,6 +121,14 @@ function resolveProfileId() {
     return Math.trunc(raw);
   }
   return 1;
+}
+
+function toSeconds(valueMs) {
+  const n = Number(valueMs || 0);
+  if (!Number.isFinite(n) || n <= 0) {
+    return 0;
+  }
+  return Math.max(0, Math.trunc(n / 1000));
 }
 
 function toPositiveIntegerOrNull(value) {
@@ -243,14 +156,23 @@ function toRemoteVideoId(item = {}) {
   return "main";
 }
 
+function hasNoConflictConstraint(error) {
+  if (!error) {
+    return false;
+  }
+  if (String(error.code || "") === "42P10") {
+    return true;
+  }
+  const message = String(error.message || "");
+  return message.includes("no unique or exclusion constraint");
+}
+
 function toProgressKey(item = {}) {
   const contentId = String(item.contentId || "").trim();
-  const season = toPositiveIntegerOrNull(item.season);
-  const episode = toPositiveIntegerOrNull(item.episode);
-  if (contentId && season != null && episode != null) {
-    return `${contentId}_s${season}e${episode}`;
-  }
-  return contentId;
+  const videoId = toRemoteVideoId(item);
+  const season = item.season == null ? "" : String(Number(item.season));
+  const episode = item.episode == null ? "" : String(Number(item.episode));
+  return `${contentId}:${videoId}:${season}:${episode}`;
 }
 
 function syncIdentityKey(item = {}) {
@@ -291,11 +213,6 @@ function coalesceSyncItems(items = []) {
   });
   return Array.from(byIdentity.values())
     .sort((left, right) => Number(right?.updatedAt || 0) - Number(left?.updatedAt || 0));
-}
-
-function isSyncableProgressItem(item = {}) {
-  const durationMs = Number(item?.durationMs || 0);
-  return !Number.isFinite(durationMs) || durationMs <= 0 || durationMs >= MIN_PROGRESS_SYNC_DURATION_MS;
 }
 
 function rowFreshness(row = {}) {
@@ -355,22 +272,41 @@ function buildRemoteProgressEntries(items = []) {
     video_id: toRemoteVideoId(item),
     season: item.season == null ? null : Number(item.season),
     episode: item.episode == null ? null : Number(item.episode),
-    position: Math.max(0, Math.trunc(Number(item.positionMs || 0))),
-    duration: Math.max(0, Math.trunc(Number(item.durationMs || 0))),
+    position: toSeconds(item.positionMs),
+    duration: toSeconds(item.durationMs),
     last_watched: Number(item.updatedAt || Date.now()),
     progress_key: toProgressKey(item)
   })));
 }
 
-function buildDeleteKeys(items = []) {
-  const keys = new Set();
-  (Array.isArray(items) ? items : []).forEach((item) => {
-    const key = toProgressKey(item);
-    if (key) {
-      keys.add(key);
-    }
-  });
-  return Array.from(keys);
+function buildLegacyFallbackRows(items = [], ownerId, profileId) {
+  return buildRemoteProgressEntries(items).map((row) => ({
+    user_id: ownerId,
+    content_id: row.content_id,
+    content_type: row.content_type,
+    video_id: row.video_id,
+    season: row.season,
+    episode: row.episode,
+    position: row.position,
+    duration: row.duration,
+    last_watched: row.last_watched,
+    progress_key: row.progress_key,
+    profile_id: profileId
+  }));
+}
+
+function buildPrimaryRows(items = [], ownerId) {
+  return dedupeRowsForConflict(items.map((item) => ({
+    owner_id: ownerId,
+    content_id: item.contentId,
+    content_type: item.contentType,
+    video_id: toRemoteVideoId(item),
+    season: item.season == null ? null : Number(item.season),
+    episode: item.episode == null ? null : Number(item.episode),
+    position_ms: item.positionMs || 0,
+    duration_ms: item.durationMs || 0,
+    updated_at: new Date(item.updatedAt || Date.now()).toISOString()
+  })), "owner_id,content_id,video_id,season,episode");
 }
 
 function buildPushSignature(rows = []) {
@@ -387,43 +323,28 @@ function buildPushSignature(rows = []) {
   );
 }
 
-async function pushOnce() {
-  let pushSignature = "";
-  try {
-    if (!AuthManager.isAuthenticated) {
-      return false;
+async function upsertRowsIndividually(table, rows, conflictCandidates = []) {
+  for (const row of Array.isArray(rows) ? rows : []) {
+    await upsertWithConflictCandidates(table, [row], conflictCandidates);
+  }
+}
+
+async function upsertWithConflictCandidates(table, rows, conflictCandidates = []) {
+  let lastError = null;
+  for (const onConflict of conflictCandidates) {
+    try {
+      const dedupedRows = dedupeRowsForConflict(rows, onConflict);
+      await SupabaseApi.upsert(table, dedupedRows, onConflict, true);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!hasNoConflictConstraint(error)) {
+        throw error;
+      }
     }
-    const items = coalesceSyncItems(await watchProgressRepository.getAll())
-      .filter((item) => isSyncableProgressItem(item));
-    const profileId = resolveProfileId();
-    const rows = buildRemoteProgressEntries(items);
-    pushSignature = buildPushSignature(rows);
-    if (pushSignature && pushSignature === lastSuccessfulPushSignature) {
-      return true;
-    }
-    if (
-      pushSignature
-      && pushSignature === lastFailedPushSignature
-      && (Date.now() - Number(lastFailedPushAt || 0)) < PUSH_RETRY_BACKOFF_MS
-    ) {
-      return false;
-    }
-    await SupabaseApi.rpc(PUSH_RPC, {
-      p_profile_id: profileId,
-      p_entries: rows
-    }, true);
-    lastSuccessfulPushSignature = pushSignature;
-    writeBaselineItems(profileId, items);
-    lastFailedPushSignature = "";
-    lastFailedPushAt = 0;
-    return true;
-  } catch (error) {
-    if (typeof pushSignature === "string" && pushSignature) {
-      lastFailedPushSignature = pushSignature;
-    }
-    lastFailedPushAt = Date.now();
-    console.warn("Watch progress sync push failed", error);
-    return false;
+  }
+  if (lastError) {
+    throw lastError;
   }
 }
 
@@ -436,7 +357,36 @@ export const WatchProgressSyncService = {
       }
       const localItems = await watchProgressRepository.getAll();
       const profileId = resolveProfileId();
-      const rows = await SupabaseApi.rpc(PULL_RPC, { p_profile_id: profileId }, true);
+      let rows = [];
+      try {
+        rows = await SupabaseApi.rpc(PULL_RPC, { p_profile_id: profileId }, true);
+      } catch (rpcError) {
+        const ownerId = await AuthManager.getEffectiveUserId();
+        try {
+          rows = await SupabaseApi.select(
+            FALLBACK_TABLE,
+            `user_id=eq.${encodeURIComponent(ownerId)}&profile_id=eq.${profileId}&select=*&order=last_watched.desc`,
+            true
+          );
+        } catch (_) {
+          try {
+            rows = await SupabaseApi.select(
+              FALLBACK_TABLE,
+              `user_id=eq.${encodeURIComponent(ownerId)}&select=*&order=last_watched.desc`,
+              true
+            );
+          } catch (primaryError) {
+            if (!shouldTryLegacyTable(primaryError)) {
+              throw rpcError;
+            }
+            rows = await SupabaseApi.select(
+              TABLE,
+              `owner_id=eq.${encodeURIComponent(ownerId)}&select=*&order=updated_at.desc`,
+              true
+            );
+          }
+        }
+      }
       const filteredRows = (Array.isArray(rows) ? rows : []).filter((row) => {
         const rowProfile = row?.profile_id ?? row?.profileId ?? null;
         if (rowProfile == null || rowProfile === "") {
@@ -444,16 +394,8 @@ export const WatchProgressSyncService = {
         }
         return String(rowProfile) === String(profileId);
       });
-      const remoteItems = filteredRows
-        .map((row) => mapProgressRow(row))
-        .filter((item) => Boolean(item.contentId) && isSyncableProgressItem(item));
-      const snapshotItems = normalizeProgressItems(remoteItems);
-      const baselineItems = readBaselineItems(profileId);
-      const mergedItems = mergeProgressItems(localItems, snapshotItems, baselineItems);
-      writeBaselineItems(profileId, snapshotItems);
-      lastSuccessfulPushSignature = buildPushSignature(buildRemoteProgressEntries(
-        coalesceSyncItems(snapshotItems)
-      ));
+      const remoteItems = filteredRows.map((row) => mapProgressRow(row)).filter((item) => Boolean(item.contentId));
+      const mergedItems = mergeProgressItems(localItems, remoteItems);
       await watchProgressRepository.replaceAll(mergedItems);
       return mergedItems;
     } catch (error) {
@@ -464,47 +406,65 @@ export const WatchProgressSyncService = {
 
   async push() {
     if (activePushPromise) {
-      pushAgainRequested = true;
       return activePushPromise;
     }
     activePushPromise = (async () => {
-      let lastResult = false;
-      do {
-        pushAgainRequested = false;
-        lastResult = await pushOnce();
-      } while (pushAgainRequested);
-      return lastResult;
+      let pushSignature = "";
+      try {
+        if (!AuthManager.isAuthenticated) {
+          return false;
+        }
+        const items = coalesceSyncItems(await watchProgressRepository.getAll());
+        if (!items.length) {
+          return true;
+        }
+        const profileId = resolveProfileId();
+        const ownerId = await AuthManager.getEffectiveUserId();
+        const fallbackRows = buildLegacyFallbackRows(items, ownerId, profileId);
+        pushSignature = buildPushSignature(fallbackRows);
+        if (pushSignature && pushSignature === lastSuccessfulPushSignature) {
+          return true;
+        }
+        if (
+          pushSignature
+          && pushSignature === lastFailedPushSignature
+          && (Date.now() - Number(lastFailedPushAt || 0)) < PUSH_RETRY_BACKOFF_MS
+        ) {
+          return false;
+        }
+        const rows = buildPrimaryRows(items, ownerId);
+        try {
+          await upsertRowsIndividually(FALLBACK_TABLE, fallbackRows, [
+            "user_id,profile_id,progress_key",
+            "user_id,progress_key",
+            "user_id,profile_id,content_id,video_id",
+            "user_id,content_id,video_id"
+          ]);
+        } catch (primaryError) {
+          if (!shouldTryLegacyTable(primaryError)) {
+            throw primaryError;
+          }
+          await upsertRowsIndividually(TABLE, rows, [
+            "owner_id,content_id,video_id",
+            "owner_id,content_id"
+          ]);
+        }
+        lastSuccessfulPushSignature = pushSignature;
+        lastFailedPushSignature = "";
+        lastFailedPushAt = 0;
+        return true;
+      } catch (error) {
+        if (typeof pushSignature === "string" && pushSignature) {
+          lastFailedPushSignature = pushSignature;
+        }
+        lastFailedPushAt = Date.now();
+        console.warn("Watch progress sync push failed", error);
+        return false;
+      }
     })().finally(() => {
       activePushPromise = null;
     });
     return activePushPromise;
-  },
-
-  async deleteItems(items = []) {
-    try {
-      if (!AuthManager.isAuthenticated) {
-        return false;
-      }
-      const keys = buildDeleteKeys(items);
-      if (!keys.length) {
-        return true;
-      }
-      await SupabaseApi.rpc(DELETE_RPC, {
-        p_profile_id: resolveProfileId(),
-        p_keys: keys
-      }, true);
-      const profileId = resolveProfileId();
-      const baselineByKey = itemsByProgressKey(readBaselineItems(profileId));
-      normalizeProgressItems(items).forEach((item) => {
-        baselineByKey.delete(progressKey(item));
-      });
-      writeBaselineItems(profileId, Array.from(baselineByKey.values()));
-      lastSuccessfulPushSignature = "";
-      return true;
-    } catch (error) {
-      console.warn("Watch progress sync delete failed", error);
-      return false;
-    }
   }
 
 };

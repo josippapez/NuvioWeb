@@ -12,153 +12,58 @@ class MetaRepository {
 
   constructor() {
     this.metaCache = new Map();
-    this.inFlightMeta = new Map();
-    this.inFlightMetaAll = new Map();
   }
 
   async getMeta(addonBaseUrl, type, id) {
-    const normalizedType = String(type || "").trim();
-    const normalizedId = String(id || "").trim();
-    const cacheKey = `${addonRepository.canonicalizeUrl(addonBaseUrl)}:${normalizedType}:${normalizedId}`;
+    const cacheKey = `${addonBaseUrl}:${type}:${id}`;
     if (this.metaCache.has(cacheKey)) {
       return { status: "success", data: this.metaCache.get(cacheKey) };
     }
 
-    if (this.inFlightMeta.has(cacheKey)) {
-      return this.inFlightMeta.get(cacheKey);
+    const url = this.buildMetaUrl(addonBaseUrl, type, id);
+    const result = await safeApiCall(() => MetaApi.getMeta(url));
+    if (result.status !== "success") {
+      return result;
     }
 
-    const request = (async () => {
-      const url = this.buildMetaUrl(addonBaseUrl, normalizedType, normalizedId);
-      const result = await safeApiCall(() => MetaApi.getMeta(url));
-      if (result.status !== "success") {
-        return result;
-      }
-
-      const meta = this.mapMeta(result.data?.meta || null);
-      if (!meta) {
-        return { status: "error", message: "Meta not found", code: 404 };
-      }
-
-      this.metaCache.set(cacheKey, meta);
-      return { status: "success", data: meta };
-    })();
-
-    this.inFlightMeta.set(cacheKey, request);
-    try {
-      return await request;
-    } finally {
-      this.inFlightMeta.delete(cacheKey);
+    const meta = this.mapMeta(result.data?.meta || null);
+    if (!meta) {
+      return { status: "error", message: "Meta not found", code: 404 };
     }
+
+    this.metaCache.set(cacheKey, meta);
+    return { status: "success", data: meta };
   }
 
   async getMetaFromAllAddons(type, id) {
-    const requestedType = String(type || "").trim();
-    const inferredType = this.inferCanonicalType(requestedType, id);
-    const cacheKey = `all:${requestedType}:${inferredType}:${String(id || "").trim()}`;
-    if (this.metaCache.has(cacheKey)) {
-      return { status: "success", data: this.metaCache.get(cacheKey) };
-    }
-
-    if (this.inFlightMetaAll.has(cacheKey)) {
-      return this.inFlightMetaAll.get(cacheKey);
-    }
-
-    const request = (async () => {
-      const addons = await addonRepository.getInstalledAddons();
-      const metaAddons = addons.filter((addon) => (addon.resources || []).some((resource) => resource?.name === "meta"));
-      const candidates = [];
-      const seenCandidates = new Set();
-      const addCandidate = (addon, candidateType) => {
-        const cleanType = String(candidateType || "").trim();
-        if (!addon || !cleanType) {
-          return;
+    const addons = await addonRepository.getInstalledAddons();
+    for (const addon of addons) {
+      const supportsMeta = addon.resources.some((resource) => {
+        if (resource.name !== "meta") {
+          return false;
         }
-        const key = `${addon.baseUrl}::${cleanType}`;
-        if (seenCandidates.has(key)) {
-          return;
+        if (!resource.types || resource.types.length === 0) {
+          return true;
         }
-        seenCandidates.add(key);
-        candidates.push({ addon, type: cleanType });
-      };
-
-      addons.forEach((addon) => {
-        if (this.supportsMetaType(addon, requestedType)) {
-          addCandidate(addon, requestedType);
-        }
+        return resource.types.some((resourceType) => resourceType === type);
       });
-      if (inferredType.toLowerCase() !== requestedType.toLowerCase()) {
-        addons.forEach((addon) => {
-          if (this.supportsMetaType(addon, inferredType)) {
-            addCandidate(addon, inferredType);
-          }
-        });
-      }
-      const topMetaAddon = metaAddons[0];
-      if (topMetaAddon) {
-        const fallbackType = this.supportsMetaType(topMetaAddon, requestedType)
-          ? requestedType
-          : this.supportsMetaType(topMetaAddon, inferredType)
-            ? inferredType
-            : (inferredType || requestedType);
-        addCandidate(topMetaAddon, fallbackType);
+
+      if (!supportsMeta) {
+        continue;
       }
 
-      for (const { addon, type: candidateType } of candidates) {
-        const result = await this.getMeta(addon.baseUrl, candidateType, id);
-        if (result.status === "success") {
-          this.metaCache.set(cacheKey, result.data);
-          return result;
-        }
+      const result = await this.getMeta(addon.baseUrl, type, id);
+      if (result.status === "success") {
+        return result;
       }
-
-      return { status: "error", message: "Meta not found in installed addons", code: 404 };
-    })();
-
-    this.inFlightMetaAll.set(cacheKey, request);
-    try {
-      return await request;
-    } finally {
-      this.inFlightMetaAll.delete(cacheKey);
     }
+
+    return { status: "error", message: "Meta not found in installed addons", code: 404 };
   }
 
   buildMetaUrl(baseUrl, type, id) {
-    const cleanBaseUrl = addonRepository.canonicalizeUrl(baseUrl);
-    const queryStart = cleanBaseUrl.indexOf("?");
-    const basePath = queryStart >= 0 ? cleanBaseUrl.slice(0, queryStart).replace(/\/+$/, "") : cleanBaseUrl;
-    const baseQuery = queryStart >= 0 ? cleanBaseUrl.slice(queryStart) : "";
-    return `${basePath}/meta/${this.encode(type)}/${this.encode(id)}.json${baseQuery}`;
-  }
-
-  supportsMetaType(addon, type) {
-    const targetType = String(type || "").trim().toLowerCase();
-    if (!targetType) {
-      return false;
-    }
-    return (addon?.resources || []).some((resource) => {
-      if (resource?.name !== "meta") {
-        return false;
-      }
-      const types = Array.isArray(resource.types)
-        ? resource.types.map((value) => String(value || "").trim().toLowerCase()).filter(Boolean)
-        : [];
-      return !types.length || types.includes(targetType);
-    });
-  }
-
-  inferCanonicalType(type, id) {
-    const normalizedType = String(type || "").trim();
-    const known = new Set(["movie", "series", "tv", "channel", "anime"]);
-    if (known.has(normalizedType.toLowerCase())) {
-      return normalizedType;
-    }
-    const normalizedId = String(id || "").toLowerCase();
-    if (normalizedId.includes(":movie:")) return "movie";
-    if (normalizedId.includes(":series:")) return "series";
-    if (normalizedId.includes(":tv:")) return "tv";
-    if (normalizedId.includes(":anime:")) return "anime";
-    return normalizedType;
+    const cleanBaseUrl = String(baseUrl || "").replace(/\/+$/, "");
+    return `${cleanBaseUrl}/meta/${this.encode(type)}/${this.encode(id)}.json`;
   }
 
   encode(value) {
@@ -187,8 +92,6 @@ class MetaRepository {
 
   clearCache() {
     this.metaCache.clear();
-    this.inFlightMeta.clear();
-    this.inFlightMetaAll.clear();
   }
 
 }
