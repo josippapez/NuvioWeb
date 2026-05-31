@@ -243,6 +243,7 @@
     <string name="sponsors_error_api_http">Sponsors API error</string>
     <string name="contributor_role_translator">Translator</string>
     <string name="contributor_role_maintainer">Maintainer</string>
+    <string name="contributor_role_app_maintainer">Maintainer of this app</string>
     <string name="cd_donation_qr">Donation QR code</string>
     <string name="cd_contributor_qr">Contributor QR code</string>
 

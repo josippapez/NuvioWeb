@@ -88,6 +88,10 @@ function contributorRoleLabel(login) {
       return t("contributor_role_translator", {}, "Translator");
     case "tapframe":
       return t("contributor_role_maintainer", {}, "Maintainer");
+    case "edoedac0":
+    case "edin":
+    case "whitegiso":
+      return t("contributor_role_app_maintainer", {}, "Maintainer of this app");
     default:
       return null;
   }
@@ -136,6 +140,11 @@ function findDirectionalTarget(nodes, current, direction) {
     })
     .filter((entry) => entry.primary * sign > 2)
     .sort((left, right) => left.score - right.score)[0]?.node || null;
+}
+
+function sortedTabListItems(container, tab) {
+  return Array.from(container?.querySelectorAll?.(`.supporters-person-card[data-tab="${tab}"]`) || [])
+    .sort((left, right) => Number(left.dataset.itemIndex || 0) - Number(right.dataset.itemIndex || 0));
 }
 
 async function loadSupporters() {
@@ -225,6 +234,7 @@ export const SupportersContributorsScreen = {
   showDonateQr: false,
   dialog: null,
   routeEnterPending: false,
+  routeEnterTimer: null,
   state: null,
   scrollTops: null,
   preserveListScrollAfterFocus: false,
@@ -246,6 +256,13 @@ export const SupportersContributorsScreen = {
     this.selectedTab = this.selectedTab || DEFAULT_TAB;
     this.focusKey = this.focusKey || `tab:${this.selectedTab}`;
     this.routeEnterPending = true;
+    if (this.routeEnterTimer) {
+      clearTimeout(this.routeEnterTimer);
+    }
+    this.routeEnterTimer = setTimeout(() => {
+      this.routeEnterPending = false;
+      this.routeEnterTimer = null;
+    }, 420);
     if (!this.handleClickBound) {
       this.handleClickBound = this.handleClickEvent.bind(this);
       this.container.addEventListener("click", this.handleClickBound);
@@ -258,6 +275,11 @@ export const SupportersContributorsScreen = {
     if (this.container && this.handleClickBound) {
       this.container.removeEventListener("click", this.handleClickBound);
     }
+    if (this.routeEnterTimer) {
+      clearTimeout(this.routeEnterTimer);
+    }
+    this.routeEnterTimer = null;
+    this.routeEnterPending = false;
     this.handleClickBound = null;
     this.dialog = null;
     this.showDonateQr = false;
@@ -566,10 +588,10 @@ export const SupportersContributorsScreen = {
   async render() {
     this.ensureState();
     this.captureListScrollTop();
-    const enterClass = this.routeEnterPending ? " nuvio-route-slide-enter" : "";
+    const enterClass = this.routeEnterPending ? " supporters-route-enter" : "";
     this.container.innerHTML = `
-      <div class="supporters-route-shell">
-        <div class="supporters-route-content${enterClass}">
+      <div class="supporters-route-shell${enterClass}">
+        <div class="supporters-route-content">
           ${this.renderBrand()}
           <section class="supporters-content-card">
             ${this.renderTabs()}
@@ -581,7 +603,6 @@ export const SupportersContributorsScreen = {
         ${this.renderDialog()}
       </div>
     `;
-    this.routeEnterPending = false;
     this.generateQrCodes();
     ScreenUtils.indexFocusables(this.container);
     bindSettingsScrollIndicators(this.container);
@@ -643,6 +664,47 @@ export const SupportersContributorsScreen = {
     focusNode(node);
     this.focusKey = String(node.dataset.focusKey || "");
     scrollSettingsContentItem(node);
+  },
+
+  getDirectionalTarget(current, direction) {
+    if (!current || this.dialog) {
+      const nodes = visibleFocusableNodes(this.dialog ? this.container.querySelector(".supporters-dialog") : this.container);
+      return findDirectionalTarget(nodes, current, direction);
+    }
+
+    if (current.dataset.action === "openItem" && (direction === "up" || direction === "down")) {
+      const tab = String(current.dataset.tab || this.selectedTab);
+      const items = sortedTabListItems(this.container, tab);
+      const currentIndex = items.indexOf(current);
+      if (direction === "down") {
+        return items[currentIndex + 1] || null;
+      }
+      if (currentIndex > 0) {
+        return items[currentIndex - 1];
+      }
+      return this.container.querySelector(`.supporters-tab[data-tab="${this.selectedTab}"]`);
+    }
+
+    if (current.dataset.action === "openItem" && (direction === "left" || direction === "right")) {
+      const tab = String(current.dataset.tab || this.selectedTab);
+      const tabIndex = TABS.indexOf(tab);
+      const nextTab = TABS[tabIndex + (direction === "left" ? -1 : 1)];
+      return nextTab ? this.container.querySelector(`.supporters-tab[data-tab="${nextTab}"]`) : null;
+    }
+
+    if (current.dataset.action === "selectTab" && direction === "down") {
+      return sortedTabListItems(this.container, this.selectedTab)[0] || null;
+    }
+
+    if (current.dataset.action === "selectTab" && (direction === "left" || direction === "right")) {
+      const tabs = Array.from(this.container?.querySelectorAll?.(".supporters-tab") || []);
+      const currentIndex = tabs.indexOf(current);
+      const nextIndex = currentIndex + (direction === "left" ? -1 : 1);
+      return tabs[nextIndex] || null;
+    }
+
+    const nodes = visibleFocusableNodes(this.container);
+    return findDirectionalTarget(nodes, current, direction);
   },
 
   async handleClickEvent(event) {
@@ -726,17 +788,18 @@ export const SupportersContributorsScreen = {
   },
 
   async onKeyDown(event) {
-    if (Platform.isBackEvent(event)) {
+    const code = Number(event?.keyCode || 0);
+    const key = String(event?.key || "");
+    if (Platform.isBackEvent(event) || code === 27 || key === "Escape" || key === "Esc" || key === "Backspace") {
       event?.preventDefault?.();
       return this.handleBack();
     }
-    const code = Number(event?.keyCode || 0);
     const direction = code === 37 ? "left" : code === 38 ? "up" : code === 39 ? "right" : code === 40 ? "down" : null;
     if (direction) {
       event?.preventDefault?.();
       const nodes = visibleFocusableNodes(this.dialog ? this.container.querySelector(".supporters-dialog") : this.container);
       const current = this.container.querySelector(".focusable.focused") || nodes[0];
-      const target = findDirectionalTarget(nodes, current, direction);
+      const target = this.getDirectionalTarget(current, direction);
       if (target) {
         this.focusTarget(target);
         if (target.dataset.action === "selectTab" && target.dataset.tab !== this.selectedTab) {

@@ -6768,6 +6768,12 @@ button:focus-visible {
   min-height: 0;
 }
 
+.supporters-route-shell.supporters-route-enter .supporters-route-content {
+  --nuvio-route-slide-distance: 8.333vw;
+  animation: nuvioRouteSlideEnter 350ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  will-change: opacity, transform;
+}
+
 .supporters-brand-card,
 .supporters-content-card {
   min-width: 0;
@@ -7127,7 +7133,7 @@ button:focus-visible {
 
 .supporters-role-badge {
   flex: 0 0 auto;
-  max-width: min(10vw, 192px);
+  max-width: min(15.63vw, 300px);
   border-radius: min(0.83vw, 16px); /* ATV 8dp -> 16px */
   border: max(1px, min(0.104vw, 2px)) solid var(--border-color); /* ATV 1dp -> 2px */
   background: var(--bg-color);
@@ -7254,7 +7260,7 @@ button:focus-visible {
 
 .supporters-dialog .supporters-role-badge {
   align-self: flex-start;
-  max-width: min(7.92vw, 152px); /* Dialog badge is compact in ATV details dialog */
+  max-width: min(15.63vw, 300px);
   padding: min(0.21vw, 4px) min(0.73vw, 14px);
   font-size: min(1.15vw, 22px); /* ATV labelSmall 11sp -> 22px */
   line-height: min(1.35vw, 26px);
