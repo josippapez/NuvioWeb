@@ -1,6 +1,7 @@
 import "./runtime/polyfills.js";
 import "intersection-observer";  
 import "whatwg-fetch";
+import { detailWatchedEnrichmentService } from "./data/repository/detailWatchedEnrichmentService.js";
 
 (function applyLegacyPatches() {
   const originalGetElementById = document.getElementById;
@@ -149,6 +150,7 @@ async function routeAfterAuthentication() {
   const activeProfile = profiles.find((profile) => String(profile.id) === String(activeProfileId)) || profiles[0] || null;
   if (activeProfile) {
     await ProfileManager.setActiveProfile(activeProfile.id);
+    detailWatchedEnrichmentService.invalidateAllCache();
     await ProfileSettingsSyncService.pull(activeProfile.id);
   }
   Router.navigate("home");

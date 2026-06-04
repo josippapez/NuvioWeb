@@ -5,6 +5,7 @@ import {
   TRAKT_REDIRECT_URI
 } from "../../config.js";
 import { TraktAuthStore } from "../local/traktAuthStore.js";
+import { detailWatchedEnrichmentService } from "./detailWatchedEnrichmentService.js";
 
 const API_VERSION = "2";
 const DEFAULT_API_URL = "https://api.trakt.tv";
@@ -249,6 +250,7 @@ export const TraktAuthService = {
         console.warn("Trakt revoke failed", error);
       }
     }
+    detailWatchedEnrichmentService.invalidateAllCache();
     TraktAuthStore.clearAuth();
   },
 
@@ -376,6 +378,19 @@ export const TraktAuthService = {
     if (!response.ok || !Array.isArray(payload)) return [];
 
     return payload.map(normalizeWatchedMovieItem).filter(Boolean);
+  },
+
+  async fetchWatchedProgress(showTraktId) {
+    const token = await this.getValidAccessToken();
+    if (!token) return null;
+
+    const { response, payload } = await requestJson(
+      `/shows/${encodeURIComponent(showTraktId)}/progress/watched`,
+      { authorization: `Bearer ${token}` }
+    );
+    if (!response.ok || !payload) return null;
+
+    return normalizeWatchedProgress(payload);
   }
 };
 
@@ -495,6 +510,32 @@ function normalizeWatchedShowItem(entry) {
       title: nextEpisode.title || ""
     } : null
   };
+}
+
+function normalizeWatchedProgress(payload) {
+  const map = new Map();
+  
+  if (!payload?.seasons || !Array.isArray(payload.seasons)) {
+    return map;
+  }
+  
+  for (const season of payload.seasons) {
+    const seasonNumber = season.number;
+    if (!season.episodes || !Array.isArray(season.episodes)) continue;
+    
+    for (const episode of season.episodes) {
+      if (!episode.completed) continue;
+      
+      const key = `${seasonNumber}:${episode.number}`;
+      map.set(key, {
+        isWatched: true,
+        watchedAt: episode.last_watched_at || null,
+        source: "trakt"
+      });
+    }
+  }
+  
+  return map;
 }
 
 function normalizeWatchedMovieItem(entry) {
