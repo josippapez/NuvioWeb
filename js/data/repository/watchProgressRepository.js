@@ -172,6 +172,7 @@ function toProgressItemFromTraktHistory(historyItem) {
     contentType: isEpisode ? "series" : "movie",
     title: isEpisode ? historyItem.showTitle : historyItem.title,
     year: isEpisode ? historyItem.showYear : historyItem.year,
+    imdbId: isEpisode ? historyItem.showImdbId : historyItem.imdbId,
     source: "trakt_history",
     updatedAt: watchedAtMs,
     positionMs: 0,
@@ -196,6 +197,7 @@ function toProgressItemFromPlayback(playbackItem) {
     contentType: isEpisode ? "series" : "movie",
     title: playbackItem.title || "",
     year: playbackItem.year,
+    imdbId: playbackItem.imdbId,
     source: "trakt_playback",
     updatedAt: pausedAtMs,
     positionMs: 0,
@@ -210,13 +212,14 @@ function toProgressItemFromPlayback(playbackItem) {
 
 function toNextEpisodeItem(watchedShowItem) {
   if (!watchedShowItem || !watchedShowItem.nextEpisode) return null;
-  const { nextEpisode, contentId, title, year, tmdbId, traktId, imdbId } = watchedShowItem;
+  const { nextEpisode, contentId, title, year, imdbId } = watchedShowItem;
   return {
     contentId,
     videoId: null,
     contentType: "series",
     title: title || "",
     year,
+    imdbId,
     source: "trakt_watched_show",
     updatedAt: Date.now(),
     positionMs: 0,
@@ -239,7 +242,8 @@ async function batchEnrichProgressItems(items) {
   const results = [];
 
   for (const item of items) {
-    const cacheKey = `${item.contentType}:${item.contentId}`;
+    const lookupId = item.imdbId || item.contentId;
+    const cacheKey = `${item.contentType}:${lookupId}`;
     const cached = enrichedMetaCache.get(cacheKey);
 
     let meta = null;
@@ -247,7 +251,7 @@ async function batchEnrichProgressItems(items) {
       meta = cached.meta;
     } else {
       const canonicalType = item.contentType === "series" ? "series" : "movie";
-      meta = await metaRepository.getMetaFromAllAddons(canonicalType, item.contentId).catch(() => null);
+      meta = await metaRepository.getMetaFromAllAddons(canonicalType, lookupId).catch(() => null);
       enrichedMetaCache.set(cacheKey, { meta, timestamp: now });
     }
 

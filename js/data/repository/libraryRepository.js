@@ -205,6 +205,7 @@ function toSavedItemFromTraktWatchlist(entry) {
   return {
     itemType: entry.type === "show" ? "series" : (entry.type || "movie"),
     itemId,
+    imdbId: entry.imdbId || null,
     title: entry.title || "",
     year: entry.year || null,
     posterUrl: "",
@@ -227,19 +228,20 @@ async function batchEnrichLibraryItems(items) {
   const results = [];
   for (const item of items) {
     const contentType = getLibraryItemContentType(item);
-    const contentId = getLibraryItemContentId(item);
-    if (!contentId) {
+    const rawContentId = getLibraryItemContentId(item);
+    if (!rawContentId) {
       results.push(item);
       continue;
     }
-    const cacheKey = `${contentType}:${contentId}`;
+    const lookupId = item.imdbId || rawContentId;
+    const cacheKey = `${contentType}:${lookupId}`;
     const cached = enrichedLibraryMetaCache.get(cacheKey);
     let meta = null;
     if (cached && (now - cached.timestamp) < ENRICHED_LIBRARY_META_CACHE_TTL_MS) {
       meta = cached.meta;
     } else {
       const canonicalType = contentType === "show" ? "series" : contentType;
-      meta = await metaRepository.getMetaFromAllAddons(canonicalType, contentId).catch(() => null);
+      meta = await metaRepository.getMetaFromAllAddons(canonicalType, lookupId).catch(() => null);
       enrichedLibraryMetaCache.set(cacheKey, { meta, timestamp: now });
     }
     results.push(meta ? { ...item, enrichedMeta: meta } : item);
