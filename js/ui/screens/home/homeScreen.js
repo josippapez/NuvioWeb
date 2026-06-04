@@ -4938,9 +4938,7 @@ export const HomeScreen = {
       this.collapseFocusedPoster();
     }
     this.promotePosterCardAssets(node, { includeNeighbors: this.isPerformanceConstrained() });
-    const defaultDelayMs = this.isPerformanceConstrained()
-      ? 0
-      : Math.max(0, Number(prefs.focusedPosterBackdropExpandDelaySeconds ?? 3)) * 1000;
+    const defaultDelayMs = Math.max(0, Number(prefs.focusedPosterBackdropExpandDelaySeconds ?? 3)) * 1000;
     const existingState = this.focusedPosterFlowState;
     const canReuseExistingState = Boolean(flowKey && existingState?.key === flowKey);
     const now = Date.now();
