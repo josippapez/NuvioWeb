@@ -24,6 +24,7 @@ import { ProfileSyncService } from "./core/profile/profileSyncService.js";
 import { ProfileSettingsSyncService } from "./core/profile/profileSettingsSyncService.js";
 import { StartupSyncService } from "./core/profile/startupSyncService.js";
 import { ThemeManager } from "./ui/theme/themeManager.js";
+import { preloadStreamBadgeImages, resetAddonLogoCache } from "./ui/screens/stream/streamScreen.js";
 import { renderAppShell } from "./bootstrap/renderAppShell.js";
 import { renderAddonRemotePage } from "./bootstrap/renderAddonRemotePage.js";
 import { warmStreamingLibs } from "./runtime/loadStreamingLibs.js";
@@ -150,11 +151,13 @@ async function routeAfterAuthentication() {
   if (activeProfile) {
     await ProfileManager.setActiveProfile(activeProfile.id);
     await ProfileSettingsSyncService.pull(activeProfile.id);
+    await preloadStreamBadgeImages();
   }
   Router.navigate("home");
 }
 
 async function bootstrapApp() {
+  resetAddonLogoCache();
   renderAppShell();
   appShellRendered = true;
   Platform.init();
@@ -213,6 +216,7 @@ async function bootstrapApp() {
 }
 
 async function bootstrapAddonRemoteMode() {
+  resetAddonLogoCache();
   await renderAddonRemotePage();
   appShellRendered = true;
 }
