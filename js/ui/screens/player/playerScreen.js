@@ -124,6 +124,8 @@ const PLAYER_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 const NEXT_EPISODE_THRESHOLD_PERCENT = 0.97;
 const NEXT_EPISODE_PREFETCH_PERCENT = 0.9;
 const SKIP_INTERVAL_CHECK_MS = 250;
+const PARENTAL_GUIDE_ROW_HEIGHT = 36;
+const PARENTAL_GUIDE_ROW_GAP = 4;
 const PAUSE_OVERLAY_DELAY_MS = 5000;
 const MAX_PAUSE_OVERLAY_CAST = 8;
 const UNSUPPORTED_EMBEDDED_SUBTITLE_CODECS = new Set(["HDMV/PGS", "VOBSUB"]);
@@ -138,6 +140,7 @@ const PARENTAL_GUIDE_LINE_OUT_DELAY_MS = 100;
 const PARENTAL_GUIDE_LINE_OUT_MS = 300;
 const PARENTAL_GUIDE_CONTAINER_OUT_DELAY_MS = 200;
 const PARENTAL_GUIDE_CONTAINER_OUT_MS = 200;
+const SKIP_INTRO_COUNTDOWN_MS = 10000;
 
 function t(key, params = {}, fallback = key) {
   return I18n.t(key, params, { fallback });
@@ -1337,9 +1340,20 @@ export const PlayerScreen = {
     this.parentalGuideShown = false;
     this.parentalGuideTimer = null;
     this.parentalGuideExitTimer = null;
+    this.parentalGuideLineEnterTimer = null;
+    this.parentalGuideLineExitTimer = null;
+    this.parentalGuideLineAnimationFrame = null;
+    this.parentalGuideLineProgress = 0;
     this.skipIntervals = [];
     this.activeSkipInterval = null;
     this.skipIntervalDismissed = false;
+    this.skipIntroAutoHidden = false;
+    this.skipIntroCountdownProgress = 0;
+    this.skipIntroCountdownLastTickAt = 0;
+    this.skipIntroCountdownStartAt = 0;
+    this.skipIntroAnimationFrame = null;
+    this.skipIntroFocusFrame = null;
+    this.skipIntroRenderedKey = "";
     this.subtitleSelectionTimer = null;
     this.subtitleLoadToken = 0;
     this.subtitleLoading = false;
@@ -1617,6 +1631,11 @@ export const PlayerScreen = {
       this.skipIntervals = [];
       this.activeSkipInterval = null;
       this.skipIntervalDismissed = false;
+      this.skipIntroAutoHidden = false;
+      this.skipIntroCountdownProgress = 0;
+      this.skipIntroCountdownLastTickAt = Date.now();
+      this.skipIntroCountdownStartAt = 0;
+      this.stopSkipIntroCountdownAnimation();
       this.renderSkipIntroButton();
       return;
     }
@@ -1625,6 +1644,11 @@ export const PlayerScreen = {
       this.skipIntervals = [];
       this.activeSkipInterval = null;
       this.skipIntervalDismissed = false;
+      this.skipIntroAutoHidden = false;
+      this.skipIntroCountdownProgress = 0;
+      this.skipIntroCountdownLastTickAt = Date.now();
+      this.skipIntroCountdownStartAt = 0;
+      this.stopSkipIntroCountdownAnimation();
       this.renderSkipIntroButton();
       return;
     }
@@ -1634,6 +1658,11 @@ export const PlayerScreen = {
     }
     this.skipIntervals = Array.isArray(intervals) ? intervals : [];
     this.skipIntervalDismissed = false;
+    this.skipIntroAutoHidden = false;
+    this.skipIntroCountdownProgress = 0;
+    this.skipIntroCountdownLastTickAt = Date.now();
+    this.skipIntroCountdownStartAt = 0;
+    this.stopSkipIntroCountdownAnimation();
     this.updateActiveSkipInterval(this.getPlaybackCurrentSeconds());
   },
 
@@ -1648,9 +1677,145 @@ export const PlayerScreen = {
     const nextKey = active ? `${active.type}:${active.startTime}:${active.endTime}` : "";
     if (previousKey !== nextKey) {
       this.skipIntervalDismissed = false;
+      this.skipIntroAutoHidden = false;
+      this.skipIntroCountdownProgress = 0;
+      this.skipIntroCountdownLastTickAt = Date.now();
+      this.skipIntroCountdownStartAt = 0;
+      this.stopSkipIntroCountdownAnimation();
     }
     this.activeSkipInterval = active;
-    this.renderSkipIntroButton();
+    if (previousKey !== nextKey) {
+      this.renderSkipIntroButton();
+      this.updateSkipIntroCountdown(Date.now());
+    }
+  },
+
+  getSkipIntervalProgress(interval = this.activeSkipInterval, currentTime = this.getPlaybackCurrentSeconds()) {
+    if (!interval) {
+      return 0;
+    }
+    const start = Number(interval.startTime);
+    const end = Number(interval.endTime);
+    const current = Number(currentTime);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || !Number.isFinite(current)) {
+      return 0;
+    }
+    return clamp((current - start) / (end - start), 0, 1);
+  },
+
+  isSkipIntroPlaybackReady() {
+    return Boolean(this.hasPresentedPlaybackFrame && !this.loadingVisible);
+  },
+
+  stopSkipIntroCountdownAnimation() {
+    if (this.skipIntroAnimationFrame != null && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(this.skipIntroAnimationFrame);
+    }
+    this.skipIntroAnimationFrame = null;
+    this.skipIntroCountdownStartAt = 0;
+  },
+
+  updateSkipIntroCountdown(now = Date.now()) {
+    const playbackReady = this.isSkipIntroPlaybackReady();
+    const shouldTrack = Boolean(this.activeSkipInterval) && playbackReady && !this.skipIntervalDismissed;
+    if (!shouldTrack) {
+      this.stopSkipIntroCountdownAnimation();
+      this.skipIntroAutoHidden = false;
+      this.skipIntroCountdownProgress = 0;
+      this.skipIntroCountdownLastTickAt = Number(now || Date.now());
+      return;
+    }
+
+    if (!this.controlsVisible) {
+      this.startSkipIntroCountdownAnimation();
+      return;
+    }
+
+    this.stopSkipIntroCountdownAnimation();
+    this.skipIntroCountdownLastTickAt = Number(now || Date.now());
+  },
+
+  startSkipIntroCountdownAnimation() {
+    if (typeof requestAnimationFrame !== "function") {
+      this.skipIntroCountdownProgress = clamp(this.skipIntroCountdownProgress, 0, 1);
+      if (this.skipIntroCountdownProgress >= 1) {
+        this.skipIntroAutoHidden = true;
+      }
+      this.syncSkipIntroButtonProgress();
+      return;
+    }
+
+    if (!this.activeSkipInterval || !this.isSkipIntroPlaybackReady() || this.skipIntervalDismissed || this.controlsVisible || this.skipIntroAutoHidden) {
+      return;
+    }
+
+    if (this.skipIntroAnimationFrame != null) {
+      return;
+    }
+
+    const currentProgress = clamp(this.skipIntroCountdownProgress, 0, 1);
+    this.skipIntroCountdownStartAt = 0;
+
+    const tick = (timestamp) => {
+      this.skipIntroAnimationFrame = null;
+      if (!this.activeSkipInterval || !this.isSkipIntroPlaybackReady() || this.skipIntervalDismissed || this.controlsVisible) {
+        this.syncSkipIntroButtonProgress();
+        return;
+      }
+
+      const now = Number(timestamp || Date.now());
+      if (!this.skipIntroCountdownStartAt) {
+        this.skipIntroCountdownStartAt = now - (currentProgress * SKIP_INTRO_COUNTDOWN_MS);
+      }
+      const elapsed = Math.max(0, now - Number(this.skipIntroCountdownStartAt || 0));
+      this.skipIntroCountdownProgress = clamp(elapsed / SKIP_INTRO_COUNTDOWN_MS, 0, 1);
+      this.syncSkipIntroButtonProgress();
+
+      if (this.skipIntroCountdownProgress >= 1) {
+        this.skipIntroAutoHidden = true;
+        this.renderSkipIntroButton();
+        return;
+      }
+
+      this.skipIntroAnimationFrame = requestAnimationFrame(tick);
+    };
+
+    this.skipIntroAnimationFrame = requestAnimationFrame(tick);
+  },
+
+  syncSkipIntroButtonProgress() {
+    const button = this.uiRefs?.skipIntro?.querySelector(".player-skip-intro-btn");
+    if (!button) {
+      return;
+    }
+    const fill = button.querySelector(".player-skip-intro-progress-fill");
+    const progressNode = button.querySelector(".player-skip-intro-progress");
+    if (fill) {
+      fill.style.transform = `scaleX(${clamp(this.skipIntroCountdownProgress, 0, 1)})`;
+    }
+    if (progressNode) {
+      const progressVisible = !this.controlsVisible && !this.skipIntroAutoHidden && !this.skipIntervalDismissed;
+      progressNode.style.opacity = progressVisible ? "1" : "0";
+    }
+  },
+
+  syncSkipIntroButtonTheme(button = null) {
+    const target = button || this.uiRefs?.skipIntro?.querySelector(".player-skip-intro-btn");
+    if (!target) {
+      return;
+    }
+
+    const rootStyle = getComputedStyle(document.documentElement);
+    const accent = rootStyle.getPropertyValue("--secondary-color").trim() || "#f5f5f5";
+    const onAccent = rootStyle.getPropertyValue("--on-secondary").trim() || "#111111";
+    const isFocused = document.activeElement === target || target.classList.contains("focused");
+    const background = isFocused ? accent : "rgba(30, 30, 30, 0.85)";
+    const color = isFocused ? onAccent : "#fff";
+
+    target.style.setProperty("background", background, "important");
+    target.style.setProperty("background-color", background, "important");
+    target.style.setProperty("color", color, "important");
+    target.style.setProperty("box-shadow", "none", "important");
   },
 
   renderSkipIntroButton() {
@@ -1659,19 +1824,82 @@ export const PlayerScreen = {
       return;
     }
     const activeInterval = this.activeSkipInterval;
-    const shouldShow = Boolean(activeInterval) && !this.skipIntervalDismissed;
-    button.classList.toggle("hidden", !shouldShow);
+    const playbackReady = this.isSkipIntroPlaybackReady();
+    const shouldShow = Boolean(activeInterval) && playbackReady && !this.skipIntervalDismissed;
+    const isVisible = shouldShow && (!this.skipIntroAutoHidden || this.controlsVisible);
+    const activeKey = activeInterval ? `${activeInterval.type}:${activeInterval.startTime}:${activeInterval.endTime}` : "none";
+    const renderKey = `${activeKey}|ready:${playbackReady ? 1 : 0}|controls:${this.controlsVisible ? 1 : 0}|hidden:${this.skipIntroAutoHidden ? 1 : 0}|dismissed:${this.skipIntervalDismissed ? 1 : 0}`;
+    button.classList.toggle("hidden", !isVisible);
+    button.classList.toggle("is-raised", Boolean(this.controlsVisible));
     if (!shouldShow) {
       button.innerHTML = "";
+      this.skipIntroRenderedKey = renderKey;
       return;
     }
-    const label = buildSkipIntervalLabel(activeInterval);
-    button.classList.toggle("is-raised", Boolean(this.controlsVisible));
-    button.innerHTML = `
-      <button class="player-skip-intro-btn focusable${!this.controlsVisible ? " is-selected" : ""}" type="button" tabindex="-1" data-player-pointer-action="skipIntro">
-        <span class="player-skip-intro-label">${escapeHtml(label)}</span>
-      </button>
-    `;
+    if (this.skipIntroRenderedKey !== renderKey || !button.querySelector(".player-skip-intro-btn")) {
+      const label = buildSkipIntervalLabel(activeInterval);
+      const progress = clamp(this.skipIntroCountdownProgress, 0, 1);
+      const progressVisible = !this.controlsVisible && !this.skipIntroAutoHidden && !this.skipIntervalDismissed;
+      button.innerHTML = `
+        <button class="player-skip-intro-btn focusable" type="button" tabindex="-1" data-player-pointer-action="skipIntro" style="--skip-intro-progress-visible:${progressVisible ? 1 : 0};">
+          <span class="player-skip-intro-content">
+            <span class="player-skip-intro-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                <path d="M6 18l8.5-6L6 6v12zm10-12v12h2V6h-2z" fill="currentColor"></path>
+              </svg>
+            </span>
+            <span class="player-skip-intro-label">${escapeHtml(label)}</span>
+          </span>
+          <span class="player-skip-intro-progress" aria-hidden="true">
+            <span class="player-skip-intro-progress-track"></span>
+            <span class="player-skip-intro-progress-fill" style="transform:scaleX(${progress.toFixed(4)})"></span>
+          </span>
+        </button>
+      `;
+      this.skipIntroRenderedKey = renderKey;
+    }
+    this.syncSkipIntroButtonProgress();
+    const focusTarget = this.uiRefs?.skipIntro?.querySelector(".player-skip-intro-btn");
+    if (focusTarget) {
+      if (!focusTarget.dataset.skipIntroThemeBound) {
+        const syncTheme = () => this.syncSkipIntroButtonTheme(focusTarget);
+        focusTarget.addEventListener("focus", syncTheme, true);
+        focusTarget.addEventListener("blur", syncTheme, true);
+        focusTarget.dataset.skipIntroThemeBound = "1";
+      }
+      this.syncSkipIntroButtonTheme(focusTarget);
+    }
+    if (isVisible && !this.controlsVisible && !this.skipIntroAutoHidden && !this.skipIntervalDismissed) {
+      if (this.skipIntroFocusFrame != null && typeof cancelAnimationFrame === "function") {
+        cancelAnimationFrame(this.skipIntroFocusFrame);
+      }
+      if (typeof requestAnimationFrame === "function") {
+        this.skipIntroFocusFrame = requestAnimationFrame(() => {
+          this.skipIntroFocusFrame = null;
+          const focusTarget = this.uiRefs?.skipIntro?.querySelector(".player-skip-intro-btn");
+          if (!focusTarget || !focusTarget.isConnected) {
+            return;
+          }
+          if (document.activeElement === focusTarget) {
+            return;
+          }
+          try {
+            focusTarget.focus();
+            this.syncSkipIntroButtonTheme(focusTarget);
+          } catch (_) {
+            // Some webOS runtimes can reject focus during DOM churn; harmless.
+          }
+        });
+      } else {
+        try {
+          const fallbackTarget = button.querySelector(".player-skip-intro-btn");
+          fallbackTarget?.focus?.();
+          this.syncSkipIntroButtonTheme(fallbackTarget);
+        } catch (_) {
+          // no-op
+        }
+      }
+    }
   },
 
   startSkipIntervalCheckTimer() {
@@ -1705,6 +1933,11 @@ export const PlayerScreen = {
     this.seekPlaybackSeconds(targetTime);
     this.skipIntervalDismissed = false;
     this.activeSkipInterval = null;
+    this.skipIntroAutoHidden = false;
+    this.skipIntroCountdownProgress = 0;
+    this.skipIntroCountdownLastTickAt = Date.now();
+    this.skipIntroCountdownStartAt = 0;
+    this.stopSkipIntroCountdownAnimation();
     this.renderSkipIntroButton();
     return true;
   },
@@ -4382,6 +4615,7 @@ export const PlayerScreen = {
       return;
     }
     overlay.classList.toggle("hidden", !this.controlsVisible);
+    this.updateSkipIntroCountdown(Date.now());
     this.renderSkipIntroButton();
     if (this.controlsVisible) {
       this.renderControlButtons();
@@ -4730,6 +4964,7 @@ export const PlayerScreen = {
     }
     const current = this.getPlaybackCurrentSeconds();
     this.updateActiveSkipInterval(current);
+    this.updateSkipIntroCountdown(Date.now());
     const duration = this.getPlaybackDurationSeconds();
     const effectiveProgressSeconds = this.controlsVisible && this.controlFocusZone === "progress" && this.seekPreviewSeconds != null
       ? Number(this.seekPreviewSeconds)
@@ -4745,6 +4980,8 @@ export const PlayerScreen = {
         uiState.progressWidth = nextWidth;
       }
     }
+    this.syncSkipIntroButtonProgress();
+    this.renderSkipIntroButton();
 
     const clock = uiRefs.clock;
     if (clock) {
@@ -8835,6 +9072,7 @@ export const PlayerScreen = {
       overlay.style.removeProperty("--parental-line-height");
       overlay.style.removeProperty("--parental-line-exit-delay");
       overlay.style.removeProperty("--parental-container-exit-delay");
+      this.stopParentalGuideLineAnimation();
       return;
     }
 
@@ -8843,18 +9081,24 @@ export const PlayerScreen = {
     const firstItemDelay = PARENTAL_GUIDE_CONTAINER_IN_MS + PARENTAL_GUIDE_LINE_IN_MS + PARENTAL_GUIDE_ITEM_STAGGER_MS;
     const lineExitDelay = Math.max(0, total * (PARENTAL_GUIDE_ITEM_EXIT_STAGGER_MS + PARENTAL_GUIDE_ITEM_EXIT_MS)) + PARENTAL_GUIDE_LINE_OUT_DELAY_MS;
     const containerExitDelay = lineExitDelay + PARENTAL_GUIDE_LINE_OUT_MS + PARENTAL_GUIDE_CONTAINER_OUT_DELAY_MS;
-    const viewportWidth = Number(globalThis.innerWidth || 0);
-    const rowHeight = Math.max(30, Math.min(viewportWidth * 0.0205, 40));
-    const rowGap = 5;
+    const rowHeight = PARENTAL_GUIDE_ROW_HEIGHT;
+    const rowGap = PARENTAL_GUIDE_ROW_GAP;
     const lineHeight = (rowHeight * total) + (rowGap * Math.max(0, total - 1));
+    const currentLineHeight = clamp(Number(this.parentalGuideLineProgress || 0), 0, lineHeight);
+    const rootStyle = getComputedStyle(document.documentElement);
+    const parentalAccent = rootStyle.getPropertyValue("--secondary-color").trim() || "#f5f5f5";
     overlay.style.animationDelay = this.parentalGuideExiting ? `${containerExitDelay}ms` : "0ms";
+    overlay.style.setProperty("--parental-row-height", `${rowHeight}px`);
+    overlay.style.setProperty("--parental-row-gap", `${rowGap}px`);
     overlay.style.setProperty("--parental-item-count", String(total));
     overlay.style.setProperty("--parental-line-height", `${lineHeight}px`);
     overlay.style.setProperty("--parental-line-exit-delay", `${lineExitDelay}ms`);
     overlay.style.setProperty("--parental-container-exit-delay", `${containerExitDelay}ms`);
-    const lineDelay = this.parentalGuideExiting ? lineExitDelay : lineEnterDelay;
+    overlay.style.setProperty("--parental-accent", parentalAccent);
     overlay.innerHTML = `
-      <div class="player-parental-line" style="animation-delay:${lineDelay}ms;--parental-line-enter-delay:${lineEnterDelay}ms"></div>
+      <div class="player-parental-line">
+        <div class="player-parental-line-fill"></div>
+      </div>
       <div class="player-parental-list">
         ${this.parentalWarnings.map((warning, index) => {
           const enterDelay = firstItemDelay + (index * (PARENTAL_GUIDE_ITEM_STAGGER_MS + PARENTAL_GUIDE_ITEM_IN_MS));
@@ -8870,6 +9114,84 @@ export const PlayerScreen = {
         }).join("")}
       </div>
     `;
+
+    const line = overlay.querySelector(".player-parental-line");
+    const lineFill = overlay.querySelector(".player-parental-line-fill");
+    if (line) {
+      line.style.height = `${currentLineHeight.toFixed(2)}px`;
+    }
+    if (lineFill) {
+      lineFill.style.background = parentalAccent;
+    }
+  },
+
+  stopParentalGuideLineAnimation({ reset = true } = {}) {
+    if (this.parentalGuideLineEnterTimer) {
+      clearTimeout(this.parentalGuideLineEnterTimer);
+      this.parentalGuideLineEnterTimer = null;
+    }
+    if (this.parentalGuideLineExitTimer) {
+      clearTimeout(this.parentalGuideLineExitTimer);
+      this.parentalGuideLineExitTimer = null;
+    }
+    if (this.parentalGuideLineAnimationFrame != null && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(this.parentalGuideLineAnimationFrame);
+    }
+    this.parentalGuideLineAnimationFrame = null;
+    if (reset) {
+      this.parentalGuideLineProgress = 0;
+      const line = this.uiRefs?.parentalGuide?.querySelector(".player-parental-line");
+      if (line) {
+        line.style.height = "0px";
+      }
+    }
+  },
+
+  animateParentalGuideLine(targetProgress, durationMs = 1) {
+    const line = this.uiRefs?.parentalGuide?.querySelector(".player-parental-line");
+    if (!line) {
+      return;
+    }
+
+    const target = Math.max(0, Number(targetProgress || 0));
+    const from = Math.max(0, Number(this.parentalGuideLineProgress || 0));
+    if (typeof requestAnimationFrame !== "function") {
+      this.parentalGuideLineProgress = target;
+      line.style.height = `${Math.max(0, target).toFixed(2)}px`;
+      return;
+    }
+
+    if (this.parentalGuideLineAnimationFrame != null) {
+      cancelAnimationFrame(this.parentalGuideLineAnimationFrame);
+      this.parentalGuideLineAnimationFrame = null;
+    }
+
+    const startedAt = performance?.now?.() ?? Date.now();
+    const tick = (timestamp) => {
+      const elapsed = Math.max(0, Number(timestamp || Date.now()) - startedAt);
+      const progress = clamp(elapsed / Math.max(1, Number(durationMs || 1)), 0, 1);
+      this.parentalGuideLineProgress = from + ((target - from) * progress);
+      line.style.height = `${Math.max(0, this.parentalGuideLineProgress).toFixed(2)}px`;
+      if (progress < 1) {
+        this.parentalGuideLineAnimationFrame = requestAnimationFrame(tick);
+        return;
+      }
+      this.parentalGuideLineAnimationFrame = null;
+    };
+
+    this.parentalGuideLineAnimationFrame = requestAnimationFrame(tick);
+  },
+
+  scheduleParentalGuideLineAnimation(targetProgress, delayMs, durationMs) {
+    const start = () => {
+      this.parentalGuideLineEnterTimer = null;
+      this.animateParentalGuideLine(targetProgress, durationMs);
+    };
+    if (delayMs > 0) {
+      this.parentalGuideLineEnterTimer = setTimeout(start, delayMs);
+      return;
+    }
+    start();
   },
 
   showParentalGuideOverlay() {
@@ -8881,6 +9203,10 @@ export const PlayerScreen = {
     this.parentalGuideExiting = false;
     this.parentalGuideShown = true;
     this.renderParentalGuideOverlay();
+    this.stopParentalGuideLineAnimation({ reset: true });
+    const lineHeight = (PARENTAL_GUIDE_ROW_HEIGHT * this.parentalWarnings.length)
+      + (PARENTAL_GUIDE_ROW_GAP * Math.max(0, this.parentalWarnings.length - 1));
+    this.scheduleParentalGuideLineAnimation(lineHeight, PARENTAL_GUIDE_CONTAINER_IN_MS, PARENTAL_GUIDE_LINE_IN_MS);
 
     if (this.parentalGuideTimer) {
       clearTimeout(this.parentalGuideTimer);
@@ -8899,6 +9225,10 @@ export const PlayerScreen = {
   },
 
   hideParentalGuideOverlay() {
+    if (this.parentalGuideTimer) {
+      clearTimeout(this.parentalGuideTimer);
+      this.parentalGuideTimer = null;
+    }
     if (!this.parentalGuideVisible || !this.parentalWarnings.length) {
       this.parentalGuideVisible = false;
       this.parentalGuideExiting = false;
@@ -8909,6 +9239,7 @@ export const PlayerScreen = {
     this.parentalGuideVisible = false;
     this.parentalGuideExiting = true;
     this.renderParentalGuideOverlay();
+    this.stopParentalGuideLineAnimation({ reset: false });
 
     if (this.parentalGuideExitTimer) {
       clearTimeout(this.parentalGuideExitTimer);
@@ -8916,9 +9247,14 @@ export const PlayerScreen = {
     const total = this.parentalWarnings.length;
     const lineExitDelay = Math.max(0, total * (PARENTAL_GUIDE_ITEM_EXIT_STAGGER_MS + PARENTAL_GUIDE_ITEM_EXIT_MS)) + PARENTAL_GUIDE_LINE_OUT_DELAY_MS;
     const containerExitDelay = lineExitDelay + PARENTAL_GUIDE_LINE_OUT_MS + PARENTAL_GUIDE_CONTAINER_OUT_DELAY_MS;
+    this.parentalGuideLineExitTimer = setTimeout(() => {
+      this.parentalGuideLineExitTimer = null;
+      this.animateParentalGuideLine(0, PARENTAL_GUIDE_LINE_OUT_MS);
+    }, lineExitDelay);
     this.parentalGuideExitTimer = setTimeout(() => {
       this.parentalGuideExiting = false;
       this.parentalGuideExitTimer = null;
+      this.stopParentalGuideLineAnimation();
       this.renderParentalGuideOverlay();
     }, containerExitDelay + PARENTAL_GUIDE_CONTAINER_OUT_MS);
   },
@@ -9877,6 +10213,15 @@ export const PlayerScreen = {
     this.clearMountedExternalSubtitleTracks();
 
     this.clearControlsAutoHide();
+    this.skipIntroAutoHidden = false;
+    this.skipIntroCountdownProgress = 0;
+    this.skipIntroCountdownLastTickAt = 0;
+    this.skipIntroCountdownStartAt = 0;
+    this.stopSkipIntroCountdownAnimation();
+    if (this.skipIntroFocusFrame != null && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(this.skipIntroFocusFrame);
+    }
+    this.skipIntroFocusFrame = null;
 
     if (this.tickTimer) {
       clearInterval(this.tickTimer);
@@ -9899,6 +10244,7 @@ export const PlayerScreen = {
       this.parentalGuideExitTimer = null;
     }
     this.parentalGuideExiting = false;
+    this.stopParentalGuideLineAnimation({ reset: true });
 
     if (this.subtitleSelectionTimer) {
       clearTimeout(this.subtitleSelectionTimer);
