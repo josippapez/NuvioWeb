@@ -1775,6 +1775,9 @@ function renderContinueWatchingCard(item, index, options = {}) {
              data-action="resumeProgress"
              data-cw-index="${index}"
              data-item-id="${escapeAttribute(normalized.contentId)}"
+             data-video-id="${escapeAttribute(normalized.videoId || "")}"
+             data-season="${escapeAttribute(normalized.season ?? "")}"
+             data-episode="${escapeAttribute(normalized.episode ?? "")}"
              data-item-type="${escapeAttribute(normalized.type || "movie")}"
              data-item-title="${escapeAttribute(normalized.title || "Untitled")}">
       <div class="home-continue-media">
@@ -3784,7 +3787,9 @@ export const HomeScreen = {
         && String(node.dataset.itemType || "") === String(pending.itemType || "");
     }
     return String(node.dataset.itemId || "") === String(pending.itemId || "")
-      && String(node.dataset.videoId || "") === String(pending.videoId || "");
+      && String(node.dataset.videoId || "") === String(pending.videoId || "")
+      && String(node.dataset.season || "") === String(pending.season || "")
+      && String(node.dataset.episode || "") === String(pending.episode || "");
   },
 
   startPendingContinueWatchingHold(node) {
@@ -3806,6 +3811,8 @@ export const HomeScreen = {
       itemId: String(isPoster ? item.id : item.contentId || ""),
       itemType: String(isPoster ? item.type : ""),
       videoId: String(isPoster ? "" : item.videoId || ""),
+      season: String(isPoster ? "" : (item.season ?? "")),
+      episode: String(isPoster ? "" : (item.episode ?? "")),
       holdTriggered: false
     };
     this.pendingContinueWatchingHoldTimer = setTimeout(() => {

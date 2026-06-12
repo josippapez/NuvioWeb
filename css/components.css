@@ -1336,7 +1336,7 @@ button:focus-visible {
   /* side padding so panel never touches edges */
   padding: 0 48px;
   box-sizing: border-box;
-  z-index: 60;
+  z-index: 10000;
   opacity: 0;
   pointer-events: none;
 }

@@ -65,6 +65,24 @@ export class NuvioDialog {
     this._keyUpHandler = this._onKeyUp.bind(this);
   }
 
+  _eventKey(e) {
+    const key = String(e?.key || "");
+    const keyName = String(e?.keyName || e?.detail?.keyName || "");
+    const code = String(e?.code || "");
+    const keyCode = Number(e?.keyCode || e?.which || 0);
+    const normalized = (key || keyName || code).toLowerCase();
+    return {
+      isBack: keyCode === 10009
+        || ["escape", "esc", "backspace", "goback", "back", "return"].includes(normalized),
+      isDown: keyCode === 40 || normalized === "arrowdown" || normalized === "down",
+      isRight: keyCode === 39 || normalized === "arrowright" || normalized === "right",
+      isUp: keyCode === 38 || normalized === "arrowup" || normalized === "up",
+      isLeft: keyCode === 37 || normalized === "arrowleft" || normalized === "left",
+      isEnter: keyCode === 13 || normalized === "enter" || normalized === "ok",
+      isSpace: keyCode === 32 || normalized === " "
+    };
+  }
+
   mount(container = document.body) {
     // Backdrop
     const backdrop = document.createElement("div");
@@ -190,30 +208,30 @@ export class NuvioDialog {
 
   _onKey(e) {
     if (this._destroyed) return;
-    const key = e.key;
+    const key = this._eventKey(e);
 
-    if (key === "Escape" || key === "Backspace" || key === "GoBack") {
+    if (key.isBack) {
       e.preventDefault();
       e.stopPropagation();
       this._dismiss();
       return;
     }
 
-    if (key === "ArrowDown" || key === "ArrowRight") {
+    if (key.isDown || key.isRight) {
       e.preventDefault();
       e.stopPropagation();
       this._focusIndex(this._focusedIndex + 1);
       return;
     }
 
-    if (key === "ArrowUp" || key === "ArrowLeft") {
+    if (key.isUp || key.isLeft) {
       e.preventDefault();
       e.stopPropagation();
       this._focusIndex(this._focusedIndex - 1);
       return;
     }
 
-    if (key === "Enter" || key === " ") {
+    if (key.isEnter || key.isSpace) {
       e.preventDefault();
       e.stopPropagation();
       if (this._enterSuppressed) {
@@ -227,8 +245,8 @@ export class NuvioDialog {
 
   _onKeyUp(e) {
     if (this._destroyed) return;
-    const key = e.key;
-    if (key === "Enter" || key === " ") {
+    const key = this._eventKey(e);
+    if (key.isEnter || key.isSpace) {
       this._enterSuppressed = false;
       if (this.suppressEnterUntilKeyUp) {
         e.preventDefault();
