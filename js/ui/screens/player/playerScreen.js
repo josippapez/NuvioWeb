@@ -144,6 +144,8 @@ const LANGUAGE_CODE_ALIASES = {
   jpn: "ja",
   kor: "ko",
   nld: "nl",
+  pb: "pt-br",
+  pob: "pt-br",
   pol: "pl",
   por: "pt",
   ron: "ro",
