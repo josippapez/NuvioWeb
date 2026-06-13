@@ -7496,6 +7496,9 @@ export const HomeScreen = {
   onKeyDown(event) {
     const currentFocusedNode = this.getCurrentFocusedNode() || this.container?.querySelector(".focusable") || null;
     const code = Number(event?.keyCode || 0);
+    if (this._homeHoldDialog) {
+      return true;
+    }
     if (this.suppressHoldMenuEnterUntilKeyUp && code === 13) {
       event.preventDefault?.();
       return;
@@ -7568,6 +7571,9 @@ export const HomeScreen = {
   },
 
   onKeyUp(event) {
+    if (this._homeHoldDialog) {
+      return true;
+    }
     if (this.suppressHoldMenuEnterUntilKeyUp) {
       this.suppressHoldMenuEnterUntilKeyUp = false;
       if (Number(event?.keyCode || 0) === 13) {

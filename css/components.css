@@ -14697,6 +14697,14 @@ button:focus-visible {
   animation: homeLoadingSpin 820ms linear infinite !important;
 }
 
+.performance-constrained .library-loading-spinner {
+  animation: librarySpin 1332ms linear infinite !important;
+}
+
+.performance-constrained .library-loading-spinner-track {
+  animation: librarySpinnerDash 1332ms cubic-bezier(0.4, 0, 0.2, 1) infinite !important;
+}
+
 .performance-constrained .home-content-card.focused {
   transform: scale(1.005) !important;
 }

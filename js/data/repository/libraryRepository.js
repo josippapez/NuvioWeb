@@ -499,7 +499,8 @@ class LibraryRepository {
     if (selectedMode !== TraktLibrarySourceMode.TRAKT) {
       return LibrarySourceMode.LOCAL;
     }
-    if (!(AuthManager.isAuthenticated || TraktAuthService.isAuthenticated())) {
+    const traktToken = await TraktAuthService.getValidAccessToken().catch(() => null);
+    if (!traktToken) {
       return LibrarySourceMode.LOCAL;
     }
     return LibrarySourceMode.TRAKT;
