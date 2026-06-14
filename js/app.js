@@ -165,15 +165,23 @@ async function setupWebOsAppLifecycle() {
     return;
   }
   // webOS keeps the app resident when it is backgrounded (e.g. the user presses
-  // Home instead of exiting from the in-app menu). Relaunching the icon then
-  // fires `webOSRelaunch` on the existing JS context instead of reloading the
-  // page. With no handler the resident instance could stay on a stale/blank
-  // frame and ignore the remote, so the app looked impossible to reopen until a
-  // TV reboot (issue #233). Re-mounting the active route re-renders the UI and
-  // restores focus.
+  // the TV Home button). Bringing the app back to the foreground fires a launch
+  // event on the existing JS context instead of reloading the page. Without a
+  // handler the resident instance stays on a stale frame and ignores the remote,
+  // making the app impossible to reopen until a TV reboot (issue #233).
+  //
+  // Which event fires depends on webOS version:
+  //   webOS 5+  → webOSRelaunch
+  //   webOS 4   → webOSLaunch  (also fires on the initial launch — guarded below)
+  //   some builds → neither; the WebView is just unfrozen (visibilitychange only)
   let recovering = false;
   const recover = async () => {
     if (recovering || !appShellRendered) {
+      return;
+    }
+    const current = Router.getCurrent();
+    // No route yet → still in initial bootstrap, not a relaunch.
+    if (!current) {
       return;
     }
     recovering = true;
@@ -181,12 +189,12 @@ async function setupWebOsAppLifecycle() {
       if (document.body) {
         document.body.style.removeProperty("display");
       }
-      const current = Router.getCurrent();
-      // Player/stream routes own transient playback state; send a relaunch to a
-      // safe, fully re-mountable screen instead of trying to rebuild them.
+      // Player/stream routes own transient playback state; recover to a safe
+      // fully re-mountable screen instead.
       const isTransientRoute = current === "player" || current === "stream";
-      const target = current && !isTransientRoute ? current : "home";
-      await Router.navigate(target, target === current ? Router.currentParams || {} : {}, {
+      const target = isTransientRoute ? "home" : current;
+      const params = target === current ? Router.currentParams || {} : {};
+      await Router.navigate(target, params, {
         replaceHistory: true,
         skipStackPush: true
       });
@@ -196,8 +204,24 @@ async function setupWebOsAppLifecycle() {
       recovering = false;
     }
   };
+
   document.addEventListener("webOSRelaunch", () => {
     void recover();
+  });
+
+  // webOS 4.x and earlier fire webOSLaunch instead of webOSRelaunch when
+  // bringing a backgrounded app to the foreground. The !current guard above
+  // skips the initial-launch invocation so we don't double-navigate on startup.
+  document.addEventListener("webOSLaunch", () => {
+    void recover();
+  });
+
+  // Some webOS builds just unfreeze the WebView without firing any named launch
+  // event — visibilitychange is the only signal available in those cases.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      void recover();
+    }
   });
 }
 
