@@ -1,0 +1,22 @@
+# Keep Prettier green on the tooling/config baseline until legacy source is normalized.
+.cache/
+.github/
+app.bundle.js
+appinfo.json
+assets/libs/
+css/
+docs/
+dist/
+index.html
+js/
+logs/
+node_modules/
+nuvio.env.js
+package-lock.json
+README.md
+scripts/
+services/**/*.cjs
+services/**/*.js
+services/**/runtime/
+*.ipk
+*.wgt

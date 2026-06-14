@@ -9,7 +9,7 @@ import { libraryRepository, LibrarySourceMode } from "../../../data/repository/l
 import { LayoutPreferences } from "../../../data/local/layoutPreferences.js";
 import { ContinueWatchingPreferences } from "../../../data/local/continueWatchingPreferences.js";
 import { HomeCatalogStore } from "../../../data/local/homeCatalogStore.js";
-import { CollectionsStore, buildCollectionHomeKey } from "../../../data/local/collectionsStore.js";
+import { CollectionsStore } from "../../../data/local/collectionsStore.js";
 import { TmdbService } from "../../../core/tmdb/tmdbService.js";
 import { TmdbMetadataService } from "../../../core/tmdb/tmdbMetadataService.js";
 import { TmdbSettingsStore } from "../../../data/local/tmdbSettingsStore.js";
@@ -18,13 +18,27 @@ import { ProfileManager } from "../../../core/profile/profileManager.js";
 import { AvatarRepository } from "../../../data/remote/supabase/avatarRepository.js";
 import { Platform } from "../../../platform/index.js";
 import { LocalStore } from "../../../core/storage/localStore.js";
-import { YOUTUBE_PROXY_URL } from "../../../config.js";
 import { I18n } from "../../../i18n/index.js";
 import {
   buildModernRowKey,
   MODERN_HOME_CONSTANTS,
   renderModernHomeLayout
 } from "./modernHomeLayout.js";
+import {
+  buildCollectionHomeRow,
+  isCollectionFolderItem,
+  normalizeCollectionFolderItem,
+  normalizeCollectionPosterShape
+} from "./homeCollectionFolders.js";
+import {
+  applyTrailerAudioPreferences,
+  resolveTrailerMetaWithTmdbFallback
+} from "./homeTrailerMedia.js";
+import {
+  buildModernHeroPresentation as createModernHeroPresentation,
+  renderModernHeroPrimary,
+  renderModernHeroSecondary
+} from "./homeHeroPresentation.js";
 import {
   buildCatalogDisableKey,
   buildCatalogOrderKey,
@@ -46,6 +60,8 @@ import {
   setLegacySidebarExpanded
 } from "../../components/sidebarNavigation.js";
 import { NuvioDialog } from "../../components/nuvioDialog.js";
+
+export { normalizeCollectionFolderItem };
 
 const HERO_ROTATE_FIRST_DELAY_MS = 20000;
 const HERO_ROTATE_INTERVAL_MS = 10000;
@@ -664,117 +680,6 @@ function formatDurationMinutes(totalMinutes) {
   return `${minutes}m`;
 }
 
-function normalizeCollectionPosterShape(value) {
-  const normalized = String(value || "").trim().toUpperCase();
-  if (normalized === "POSTER") {
-    return "POSTER";
-  }
-  if (normalized === "LANDSCAPE" || normalized === "WIDE") {
-    return "LANDSCAPE";
-  }
-  return "SQUARE";
-}
-
-function normalizeAnimatedCollectionAssetUrl(value) {
-  const normalized = String(value || "").trim();
-  if (!normalized) {
-    return "";
-  }
-  if (/\.gifv(?:$|[?#])/i.test(normalized)) {
-    return normalized.replace(/\.gifv(?=($|[?#]))/i, ".gif");
-  }
-  return normalized;
-}
-
-function isCollectionFolderItem(item = {}) {
-  return String(item?.heroSource || "").toLowerCase() === "collection"
-    || String(item?.type || item?.apiType || "").toLowerCase() === "collection_folder"
-    || Boolean(item?.collectionId && item?.folderId);
-}
-
-export function normalizeCollectionFolderItem(item, collectionMeta = null) {
-  if (!item) {
-    return null;
-  }
-  const collectionId = firstNonEmpty(item.collectionId, collectionMeta?.id);
-  const folderId = firstNonEmpty(item.folderId, item.id);
-  const title = firstNonEmpty(item.rawTitle, item.folderTitle, item.title, item.name, item.heroTitle);
-  if (!collectionId || !folderId || !title) {
-    return null;
-  }
-  const collectionTitle = firstNonEmpty(item.collectionTitle, collectionMeta?.title);
-  const coverImageUrl = firstNonEmpty(item.coverImageUrl, item.coverImage);
-  const focusGifUrl = normalizeAnimatedCollectionAssetUrl(firstNonEmpty(item.focusGifUrl));
-  const focusGifEnabled = item.focusGifEnabled !== false;
-  const hideTitle = Boolean(item.hideTitle);
-  const tileShape = normalizeCollectionPosterShape(item.tileShape || item.posterShape);
-  const coverEmoji = firstNonEmpty(item.coverEmoji);
-  const cardImage = focusGifEnabled
-    ? firstNonEmpty(coverImageUrl, collectionMeta?.backdropImageUrl)
-    : firstNonEmpty(focusGifUrl, coverImageUrl, collectionMeta?.backdropImageUrl);
-  const heroBackdrop = firstNonEmpty(item.heroBackdropUrl, coverImageUrl, collectionMeta?.backdropImageUrl);
-  return {
-    ...item,
-    id: `collection:${collectionId}:${folderId}`,
-    type: "collection_folder",
-    apiType: "collection_folder",
-    heroSource: "collection",
-    rawTitle: title,
-    name: hideTitle ? "" : title,
-    title: hideTitle ? "" : title,
-    heroTitle: hideTitle ? "" : (coverEmoji ? `${coverEmoji}  ${title}` : title),
-    subtitle: hideTitle ? "" : collectionTitle,
-    poster: cardImage,
-    background: heroBackdrop,
-    backdrop: heroBackdrop,
-    landscapePoster: heroBackdrop,
-    logo: firstNonEmpty(item.titleLogoUrl),
-    description: "",
-    genres: [],
-    collectionId,
-    collectionTitle,
-    folderId,
-    coverImageUrl,
-    focusGifUrl,
-    focusGifEnabled,
-    coverEmoji,
-    tileShape,
-    hideTitle,
-    heroBackdropUrl: firstNonEmpty(item.heroBackdropUrl),
-    heroVideoUrl: firstNonEmpty(item.heroVideoUrl),
-    titleLogoUrl: firstNonEmpty(item.titleLogoUrl)
-  };
-}
-
-function buildCollectionHomeRow(collection = {}) {
-  const rowKey = buildCollectionHomeKey(collection);
-  return {
-    rowKind: "collection",
-    collectionId: collection.id,
-    collectionTitle: collection.title,
-    collection,
-    type: "collection_folder",
-    homeCatalogKey: rowKey,
-    homeCatalogDisableKey: rowKey,
-    pinToTop: Boolean(collection.pinToTop),
-    focusGlowEnabled: collection.focusGlowEnabled !== false,
-    viewMode: String(collection.viewMode || "TABBED_GRID"),
-    showAllTab: collection.showAllTab !== false,
-    result: {
-      status: "success",
-      data: {
-        items: (Array.isArray(collection.folders) ? collection.folders : [])
-          .map((folder) => normalizeCollectionFolderItem({
-            ...folder,
-            collectionId: collection.id,
-            collectionTitle: collection.title
-          }, collection))
-          .filter(Boolean)
-      }
-    }
-  };
-}
-
 function normalizeHomeRowItem(row = null, item = null) {
   if (!row || !item) {
     return null;
@@ -800,138 +705,6 @@ function formatEpisodeCode(season, episode) {
   return "";
 }
 
-function resolveYoutubeId(value) {
-  const raw = String(value || "").trim();
-  if (!raw) {
-    return "";
-  }
-  const directMatch = raw.match(/^[A-Za-z0-9_-]{11}$/);
-  if (directMatch) {
-    return directMatch[0];
-  }
-  const patterns = [
-    /(?:youtube\.com\/watch\?v=|youtube\.com\/embed\/|youtu\.be\/)([A-Za-z0-9_-]{11})/i,
-    /(?:youtube\.com\/shorts\/)([A-Za-z0-9_-]{11})/i
-  ];
-  for (const pattern of patterns) {
-    const match = raw.match(pattern);
-    if (match?.[1]) {
-      return match[1];
-    }
-  }
-  return "";
-}
-
-function buildYoutubeEmbedUrl(videoId, { muted = true } = {}) {
-  const cleanId = resolveYoutubeId(videoId);
-  if (!cleanId) {
-    return "";
-  }
-  const proxyBase = String(YOUTUBE_PROXY_URL || "").trim();
-  if (proxyBase) {
-    try {
-      const proxyUrl = new URL(proxyBase, globalThis?.location?.href || "https://example.com/");
-      proxyUrl.searchParams.set("v", cleanId);
-      proxyUrl.searchParams.set("autoplay", "1");
-      proxyUrl.searchParams.set("muted", muted ? "1" : "0");
-      proxyUrl.searchParams.set("controls", "0");
-      proxyUrl.searchParams.set("loop", "1");
-      proxyUrl.searchParams.set("playlist", cleanId);
-      proxyUrl.searchParams.set("playsinline", "1");
-      proxyUrl.searchParams.set("rel", "0");
-      proxyUrl.searchParams.set("_cb", `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-      return proxyUrl.toString();
-    } catch (_) {
-      return "";
-    }
-  }
-  if (typeof globalThis?.document === "undefined") {
-    return "";
-  }
-  const params = new URLSearchParams({
-    autoplay: "1",
-    mute: muted ? "1" : "0",
-    controls: "0",
-    loop: "1",
-    playlist: cleanId,
-    playsinline: "1",
-    rel: "0",
-    modestbranding: "1",
-    enablejsapi: "1",
-    iv_load_policy: "3"
-  });
-  const origin = String(globalThis?.location?.origin || "").trim();
-  if (/^https?:\/\//i.test(origin)) {
-    params.set("origin", origin);
-  }
-  return `https://www.youtube.com/embed/${cleanId}?${params.toString()}`;
-}
-
-function resolveTrailerSource(meta = {}) {
-  const trailerCandidates = [
-    ...(Array.isArray(meta?.trailers) ? meta.trailers : []),
-    ...(Array.isArray(meta?.videos) ? meta.videos : [])
-  ];
-  for (const entry of trailerCandidates) {
-    const ytId = resolveYoutubeId(
-      entry?.ytId
-      || entry?.youtubeId
-      || entry?.source
-      || entry?.url
-      || entry?.link
-      || ""
-    );
-    if (ytId) {
-      const embedUrl = buildYoutubeEmbedUrl(ytId);
-      if (!embedUrl) {
-        continue;
-      }
-      return {
-        kind: "youtube",
-        ytId,
-        embedUrl
-      };
-    }
-  }
-  const fallbackId = resolveYoutubeId(Array.isArray(meta?.trailerYtIds) ? meta.trailerYtIds[0] : "");
-  if (!fallbackId) {
-    return null;
-  }
-  const fallbackEmbedUrl = buildYoutubeEmbedUrl(fallbackId);
-  if (!fallbackEmbedUrl) {
-    return null;
-  }
-  return {
-    kind: "youtube",
-    ytId: fallbackId,
-    embedUrl: fallbackEmbedUrl
-  };
-}
-
-function applyTrailerAudioPreferences(source, prefs = {}) {
-  if (!source) {
-    return null;
-  }
-  const muted = Boolean(prefs.focusedPosterBackdropTrailerMuted);
-  if (source.kind === "youtube") {
-    const embedUrl = buildYoutubeEmbedUrl(source.ytId, { muted });
-    if (!embedUrl) {
-      return null;
-    }
-    return {
-      ...source,
-      embedUrl,
-      muted
-    };
-  }
-  if (source.kind === "video") {
-    return {
-      ...source,
-      muted
-    };
-  }
-  return source;
-}
 
 function withTimeout(promise, ms, fallbackValue) {
   let timer = null;
@@ -945,44 +718,6 @@ function withTimeout(promise, ms, fallbackValue) {
       clearTimeout(timer);
     }
   });
-}
-
-async function resolveTrailerMetaWithTmdbFallback(meta = {}, itemType = "movie") {
-  const fallbackSource = resolveTrailerSource(meta);
-  if (fallbackSource) {
-    return fallbackSource;
-  }
-  const settings = TmdbSettingsStore.get();
-  if (!settings.enabled || !settings.apiKey) {
-    return fallbackSource;
-  }
-  try {
-    const tmdbId = await withTimeout(TmdbService.ensureTmdbId(meta?.id, itemType), 1800, null);
-    if (!tmdbId) {
-      return null;
-    }
-    const enrichment = await withTimeout(TmdbMetadataService.fetchEnrichment({
-      tmdbId,
-      contentType: itemType,
-      language: settings.language
-    }), 2200, null);
-    if (!enrichment) {
-      return fallbackSource;
-    }
-    const mergedMeta = {
-      ...meta,
-      trailers: Array.isArray(meta?.trailers) && meta.trailers.length
-        ? meta.trailers
-        : (Array.isArray(enrichment?.trailers) ? enrichment.trailers : []),
-      trailerYtIds: Array.isArray(meta?.trailerYtIds) && meta.trailerYtIds.length
-        ? meta.trailerYtIds
-        : (Array.isArray(enrichment?.trailerYtIds) ? enrichment.trailerYtIds : [])
-    };
-    const enrichedFallbackSource = resolveTrailerSource(mergedMeta);
-    return enrichedFallbackSource || fallbackSource;
-  } catch (_) {
-    return fallbackSource;
-  }
 }
 
 function getContinueWatchingMetaTimeout(timeoutMs) {
@@ -1583,125 +1318,16 @@ function buildHeroDisplayModel(hero, layoutMode) {
 }
 
 export function buildModernHeroPresentation(hero) {
-  if (isCollectionFolderItem(hero)) {
-    const normalizedCollection = normalizeCollectionFolderItem(hero);
-    if (!normalizedCollection) {
-      return null;
-    }
-    return {
-      title: normalizedCollection.heroTitle || normalizedCollection.name || normalizedCollection.rawTitle || "",
-      logo: firstNonEmpty(normalizedCollection.titleLogoUrl, normalizedCollection.logo),
-      description: "",
-      backdrop: buildHeroBackdropSources(normalizedCollection)[0] || "",
-      backdropFallbacks: buildHeroBackdropSources(normalizedCollection).slice(1),
-      leadingMeta: [],
-      trailingMeta: [],
-      secondaryHighlightText: "",
-      badges: [],
-      languageText: "",
-      showImdbPrimary: false,
-      showImdbSecondary: false,
-      imdbText: ""
-    };
-  }
-  const isContinueWatchingHero = hero?.heroSource === "continueWatching";
-  const normalized = isContinueWatchingHero
-    ? normalizeContinueWatchingItem(hero)
-    : normalizeCatalogItem(hero);
-  if (!normalized) {
-    return null;
-  }
-
-  const isSeries = String(normalized.type || normalized.apiType || "").toLowerCase() === "series";
-  const genres = Array.isArray(normalized.genres) ? normalized.genres.filter(Boolean) : [];
-  const contentTypeText = toTitleCase(normalized.type || normalized.apiType || "movie");
-  const runtimeText = formatRuntimeText(normalized);
-  const yearText = extractReleaseDateText(normalized);
-  const imdbText = resolveImdbRating(normalized);
-  const statusBadge = firstNonEmpty(normalized.status).toUpperCase();
-  const ageRatingBadge = firstNonEmpty(normalized.ageRating);
-  const languageText = firstNonEmpty(normalized.language).toUpperCase();
-  const secondaryHighlightText = isContinueWatchingHero
-    ? firstNonEmpty(normalized.progressStatus).toUpperCase()
-    : "";
-  const leadingMeta = isContinueWatchingHero
-    ? [[normalized.episodeCode, normalized.episodeTitle, genres[0]].filter(Boolean).join(" · ") || contentTypeText].filter(Boolean)
-    : [contentTypeText, genres[0]].filter(Boolean);
-  const trailingMeta = isContinueWatchingHero
-    ? [yearText].filter(Boolean)
-    : [runtimeText, yearText].filter(Boolean);
-  const badges = isContinueWatchingHero ? [] : [ageRatingBadge, statusBadge].filter(Boolean);
-  const showImdbPrimary = Boolean(imdbText) && !isSeries && !badges.length && !secondaryHighlightText;
-  const showImdbSecondary = Boolean(imdbText) && !showImdbPrimary;
-
-  return {
-    title: normalized.name || "Untitled",
-    logo: firstNonEmpty(normalized.logo),
-    description: firstNonEmpty(
-      isContinueWatchingHero ? normalized.episodeDescription : null,
-      normalized.description
-    ) || "",
-    backdrop: buildHeroBackdropSources(normalized)[0] || "",
-    backdropFallbacks: buildHeroBackdropSources(normalized).slice(1),
-    leadingMeta,
-    trailingMeta,
-    secondaryHighlightText,
-    badges,
-    languageText,
-    showImdbPrimary,
-    showImdbSecondary,
-    imdbText
-  };
-}
-
-function renderModernHeroMetaGroup(tokens = []) {
-  return tokens
-    .filter(Boolean)
-    .map((token) => `<span>${escapeHtml(token)}</span>`)
-    .join('<span class="home-hero-dot">•</span>');
-}
-
-function renderModernHeroPrimary(display) {
-  const left = renderModernHeroMetaGroup(display.leadingMeta);
-  const rightTokens = display.trailingMeta
-    .filter(Boolean)
-    .map((token) => `<span>${escapeHtml(token)}</span>`);
-  if (display.showImdbPrimary) {
-    rightTokens.push(`
-      <span class="home-hero-imdb">
-        <img src="assets/icons/imdb_logo_2016.svg" alt="IMDb" />
-        <span>${escapeHtml(display.imdbText)}</span>
-      </span>
-    `);
-  }
-  const hasRight = rightTokens.length > 0;
-  return `
-    <div class="home-modern-hero-meta-group home-modern-hero-meta-group-leading">${left}</div>
-    ${left && hasRight ? '<span class="home-hero-dot">•</span>' : ""}
-    <div class="home-modern-hero-meta-group home-modern-hero-meta-group-trailing">${rightTokens.join('<span class="home-hero-dot">•</span>')}</div>
-  `;
-}
-
-function renderModernHeroSecondary(display) {
-  const parts = [];
-  if (display.secondaryHighlightText) {
-    parts.push(`<span class="home-modern-hero-highlight">${escapeHtml(display.secondaryHighlightText)}</span>`);
-  }
-  display.badges.forEach((badge) => {
-    parts.push(`<span class="home-modern-hero-badge">${escapeHtml(badge)}</span>`);
+  return createModernHeroPresentation(hero, {
+    normalizeContinueWatchingItem,
+    normalizeCatalogItem,
+    firstNonEmpty,
+    toTitleCase,
+    formatRuntimeText,
+    extractReleaseDateText,
+    resolveImdbRating,
+    buildHeroBackdropSources
   });
-  if (display.showImdbSecondary) {
-    parts.push(`
-      <span class="home-hero-imdb">
-        <img src="assets/icons/imdb_logo_2016.svg" alt="IMDb" />
-        <span>${escapeHtml(display.imdbText)}</span>
-      </span>
-    `);
-  }
-  if (display.languageText) {
-    parts.push(`<span class="home-modern-hero-secondary-detail">${escapeHtml(display.languageText)}</span>`);
-  }
-  return parts.join('<span class="home-hero-dot">•</span>');
 }
 
 function renderMetaTokens(tokens = []) {
@@ -3281,7 +2907,7 @@ export const HomeScreen = {
     if (this.layoutMode === "modern") {
       const primaryNode = heroNode.querySelector(".home-modern-hero-meta-line");
       if (primaryNode) {
-        primaryNode.innerHTML = renderModernHeroPrimary(display);
+        primaryNode.innerHTML = renderModernHeroPrimary(display, escapeHtml);
         primaryNode.classList.toggle(
           "is-empty",
           !display.leadingMeta.length && !display.trailingMeta.length && !display.showImdbPrimary
@@ -3290,7 +2916,7 @@ export const HomeScreen = {
 
       const secondaryNode = heroNode.querySelector(".home-modern-hero-secondary");
       if (secondaryNode) {
-        secondaryNode.innerHTML = renderModernHeroSecondary(display);
+        secondaryNode.innerHTML = renderModernHeroSecondary(display, escapeHtml);
         secondaryNode.classList.toggle(
           "is-empty",
           !display.secondaryHighlightText && !display.badges.length && !display.showImdbSecondary && !display.languageText
