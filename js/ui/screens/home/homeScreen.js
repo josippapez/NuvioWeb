@@ -47,6 +47,12 @@ import {
   renderMetaTokens as createMetaTokens
 } from "./homeHeroMarkup.js";
 import {
+  buildHeroBackdropSources,
+  encodeHeroBackdropFallbacks,
+  renderHeroBackdropImage as renderHeroBackdropImageMarkup,
+  uniqueNonEmptyValues
+} from "./homeHeroBackdrop.js";
+import {
   buildCatalogDisableKey,
   buildCatalogOrderKey,
   catalogRequiresExtras
@@ -197,51 +203,12 @@ function firstNonEmpty(...values) {
   return "";
 }
 
-function uniqueNonEmptyValues(values = []) {
-  const seen = new Set();
-  const result = [];
-  values.forEach((value) => {
-    const normalized = String(value || "").trim();
-    if (!normalized || seen.has(normalized)) {
-      return;
-    }
-    seen.add(normalized);
-    result.push(normalized);
-  });
-  return result;
-}
-
-function buildHeroBackdropSources(item = null) {
-  return uniqueNonEmptyValues([
-    item?.background,
-    item?.backdrop,
-    item?.backdropUrl,
-    item?.landscapePoster,
-    item?.poster,
-    item?.thumbnail,
-    item?.episodeThumbnail
-  ]);
-}
-
-function encodeHeroBackdropFallbacks(sources = []) {
-  return sources.map((source) => encodeURIComponent(source)).join("|");
-}
-
-function getHeroBackdropErrorHandler() {
-  return "var q=(this.dataset.fallbackSrcs||'').split('|').filter(Boolean);var next=q.shift();if(next){this.dataset.fallbackSrcs=q.join('|');this.src=decodeURIComponent(next);return;}this.removeAttribute('src');this.classList.add('placeholder');";
-}
-
 function getImageFallbackErrorHandler() {
   return "var q=(this.dataset.fallbackSrcs||'').split('|').filter(Boolean);var next=q.shift();if(next){this.dataset.fallbackSrcs=q.join('|');this.src=decodeURIComponent(next);return;}this.removeAttribute('src');this.classList.add('placeholder');";
 }
 
 function renderHeroBackdropImage(display) {
-  if (!display?.backdrop) {
-    return '<div class="home-hero-backdrop placeholder"></div>';
-  }
-  const fallbackQueue = encodeHeroBackdropFallbacks(display.backdropFallbacks || []);
-  const fallbackAttribute = fallbackQueue ? ` data-fallback-srcs="${escapeAttribute(fallbackQueue)}"` : "";
-  return `<img class="home-hero-backdrop" src="${escapeAttribute(display.backdrop)}"${fallbackAttribute} alt="${escapeAttribute(display.title)}" decoding="async" fetchpriority="high" onerror="${getHeroBackdropErrorHandler()}" />`;
+  return renderHeroBackdropImageMarkup(display, { escapeAttribute });
 }
 
 function limitTextToWordCount(value, maxWords = 0) {

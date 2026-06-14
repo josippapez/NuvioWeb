@@ -24,6 +24,7 @@ import { TizenStreamingServerResolver } from "../../../core/p2p/tizenStreamingSe
 import { requestWebOsCompanionService, subscribeWebOsCompanionService } from "../../../platform/webos/webosCompanionService.js";
 import { flattenStreamGroups, mergeStreamItems, normalizePlayableStreamCandidates } from "./playerStreamCandidates.js";
 import { parseManifestTracks } from "./playerManifestTracks.js";
+import { buildSubtitleLanguageRailGroups, filterSubtitleOptionsForLanguage } from "./playerSubtitleOptionGrouping.js";
 import {
   SUBTITLE_LANGUAGE_OFF_KEY,
   SUBTITLE_LANGUAGE_UNKNOWN_KEY,
@@ -7871,69 +7872,13 @@ export const PlayerScreen = {
     }
     const options = this.collectSubtitleOptionItems();
     const selectedLanguageKey = this.getSelectedSubtitleLanguageKey();
-    const groups = new Map();
-    options.forEach((option) => {
-      if (!groups.has(option.languageKey)) {
-        groups.set(option.languageKey, {
-          key: option.languageKey,
-          label: option.languageLabel || subtitleLanguageLabel(option.languageKey),
-          selected: false,
-          count: 0
-        });
-      }
-      const group = groups.get(option.languageKey);
-      group.count += 1;
-      group.selected = group.selected || Boolean(option.selected);
-    });
-    if (!groups.has(SUBTITLE_LANGUAGE_OFF_KEY)) {
-      groups.set(SUBTITLE_LANGUAGE_OFF_KEY, {
-        key: SUBTITLE_LANGUAGE_OFF_KEY,
-        label: t("subtitle_none", {}, "Off"),
-        selected: selectedLanguageKey === SUBTITLE_LANGUAGE_OFF_KEY,
-        count: 1
-      });
-    }
     const preferredTargets = this.getStartupPreferredSubtitleLanguageTargets();
-    const preferredRankCache = new Map();
-    const getPreferredRank = (entry) => {
-      const key = String(entry?.key || "");
-      if (!key || key === SUBTITLE_LANGUAGE_OFF_KEY) {
-        return Number.MAX_SAFE_INTEGER;
-      }
-      if (preferredRankCache.has(key)) {
-        return preferredRankCache.get(key);
-      }
-      const keyBase = key.split("-")[0];
-      const rank = preferredTargets.findIndex((target) => {
-        const targetKey = String(target || "");
-        const targetBase = targetKey.split("-")[0];
-        return key === targetKey || (keyBase && targetBase && keyBase === targetBase);
-      });
-      const resolvedRank = rank >= 0 ? rank : Number.MAX_SAFE_INTEGER;
-      preferredRankCache.set(key, resolvedRank);
-      return resolvedRank;
-    };
     const locale = typeof I18n.getLocale === "function" ? I18n.getLocale() : undefined;
-    const values = Array.from(groups.values()).sort((left, right) => {
-      if (left.key === right.key) return 0;
-      if (left.key === SUBTITLE_LANGUAGE_OFF_KEY) return -1;
-      if (right.key === SUBTITLE_LANGUAGE_OFF_KEY) return 1;
-      // Sink the "Unknown" group below the real languages instead of letting
-      // its label sort it into the middle of the alphabetical list.
-      const leftUnknown = left.key === SUBTITLE_LANGUAGE_UNKNOWN_KEY;
-      const rightUnknown = right.key === SUBTITLE_LANGUAGE_UNKNOWN_KEY;
-      if (leftUnknown !== rightUnknown) {
-        return leftUnknown ? 1 : -1;
-      }
-      const preferredDelta = getPreferredRank(left) - getPreferredRank(right);
-      if (preferredDelta !== 0) {
-        return preferredDelta;
-      }
-      const labelDelta = String(left.label || "").localeCompare(String(right.label || ""), locale, { sensitivity: "base" });
-      if (labelDelta !== 0) {
-        return labelDelta;
-      }
-      return String(left.key || "").localeCompare(String(right.key || ""), "en", { sensitivity: "base" });
+    const values = buildSubtitleLanguageRailGroups(options, {
+      selectedLanguageKey,
+      preferredTargets,
+      offLabel: t("subtitle_none", {}, "Off"),
+      locale
     });
     this.trackDialogCache.subtitleLanguageRail = values;
     return values;
@@ -8032,21 +7977,12 @@ export const PlayerScreen = {
     if (optionsByLanguage?.has(normalizedLanguageKey)) {
       return optionsByLanguage.get(normalizedLanguageKey);
     }
-    const sourceRank = { internal: 0, addon: 1, off: 2 };
     const locale = typeof I18n.getLocale === "function" ? I18n.getLocale() : undefined;
-    const filteredOptions = this.collectSubtitleOptionItems()
-      .filter((entry) => entry.languageKey === normalizedLanguageKey && entry.languageKey !== SUBTITLE_LANGUAGE_OFF_KEY)
-      .sort((left, right) => {
-        const sourceDelta = (sourceRank[left.sourceType] ?? 99) - (sourceRank[right.sourceType] ?? 99);
-        if (sourceDelta !== 0) {
-          return sourceDelta;
-        }
-        const secondaryDelta = String(left.secondary || "").localeCompare(String(right.secondary || ""), locale, { sensitivity: "base" });
-        if (secondaryDelta !== 0) {
-          return secondaryDelta;
-        }
-        return String(left.title || "").localeCompare(String(right.title || ""), locale, { sensitivity: "base" });
-      });
+    const filteredOptions = filterSubtitleOptionsForLanguage(
+      this.collectSubtitleOptionItems(),
+      normalizedLanguageKey,
+      { locale }
+    );
     optionsByLanguage?.set(normalizedLanguageKey, filteredOptions);
     return filteredOptions;
   },
