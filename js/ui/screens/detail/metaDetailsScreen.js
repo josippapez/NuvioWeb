@@ -48,6 +48,11 @@ const EPISODE_VIRTUALIZATION_MIN_WINDOW = 20;
 const EPISODE_VIRTUALIZATION_OVERSCAN = 8;
 const EPISODE_VIRTUALIZATION_DEFAULT_CARD_WIDTH = 540;
 const EPISODE_VIRTUALIZATION_DEFAULT_GAP = 34;
+const EPISODE_HOLD_REPEAT_INITIAL_DELAY_MS = 170;
+const EPISODE_HOLD_REPEAT_MIN_INTERVAL_MS = 24;
+const EPISODE_HOLD_REPEAT_MAX_INTERVAL_MS = 140;
+const EPISODE_HOLD_REPEAT_STEP_INTERVAL_MS = 220;
+const EPISODE_HOLD_REPEAT_STEP_MULTIPLIER_MAX = 50;
 const LOCAL_YOUTUBE_PROXY_URL = "youtube-proxy.html";
 
 function t(key, params = {}, fallback = key) {
@@ -1241,6 +1246,12 @@ export const MetaDetailsScreen = {
     this.episodeTrackScrollHandler = null;
     this.episodeTrackScrollNode = null;
     this.episodeVirtualSyncRaf = null;
+    this.episodeHoldRepeatTimer = null;
+    this.episodeHoldRepeatDirection = "";
+    this.episodeHoldRepeatStartedAt = 0;
+    this.episodeHoldRepeatStepCount = 0;
+    this.episodeHoldRepeatTargetVideoId = "";
+    this.episodeThumbnailPrefetchCache = new Set();
     this.railFocusIndexByKey = {};
     this.watchedEpisodeKeys = new Set();
     this.autoOpenedContinueWatchingStream = false;
@@ -2947,6 +2958,27 @@ export const MetaDetailsScreen = {
     `;
   },
 
+  warmEpisodeThumbnails(episodes = [], startIndex = 0, endIndex = 0) {
+    if (!Array.isArray(episodes) || !episodes.length) {
+      return;
+    }
+    const from = Math.max(0, Math.min(episodes.length - 1, Number(startIndex || 0)));
+    const to = Math.max(from, Math.min(episodes.length - 1, Number(endIndex || 0)));
+    const prefetchStart = Math.max(0, from - EPISODE_VIRTUALIZATION_OVERSCAN);
+    const prefetchEnd = Math.min(episodes.length - 1, to + EPISODE_VIRTUALIZATION_OVERSCAN);
+    for (let index = prefetchStart; index <= prefetchEnd; index += 1) {
+      const thumbnail = String(episodes[index]?.thumbnail || "").trim();
+      if (!thumbnail || this.episodeThumbnailPrefetchCache.has(thumbnail)) {
+        continue;
+      }
+      this.episodeThumbnailPrefetchCache.add(thumbnail);
+      const image = new Image();
+      image.decoding = "async";
+      image.loading = "eager";
+      image.src = thumbnail;
+    }
+  },
+
   renderEpisodeCards(preferredIndex = null) {
     const episodes = this.getSelectedSeasonEpisodes();
     if (!episodes.length) {
@@ -2960,6 +2992,7 @@ export const MetaDetailsScreen = {
     const visibleEpisodes = windowState.virtualized
       ? episodes.slice(windowState.start, windowState.end + 1)
       : episodes;
+    this.warmEpisodeThumbnails(episodes, windowState.start, windowState.end);
     const cards = visibleEpisodes.map((episode, offset) => this.renderEpisodeCard(episode, windowState.virtualized ? windowState.start + offset : offset)).join("");
     if (!windowState.virtualized) {
       return cards;
@@ -3728,6 +3761,119 @@ export const MetaDetailsScreen = {
       itemType: node.dataset.itemType || "movie",
       fallbackTitle: node.dataset.itemTitle || "Untitled"
     });
+  },
+
+  stopEpisodeHoldRepeat() {
+    if (this.episodeHoldRepeatTimer) {
+      clearTimeout(this.episodeHoldRepeatTimer);
+      this.episodeHoldRepeatTimer = null;
+    }
+    this.episodeHoldRepeatDirection = "";
+    this.episodeHoldRepeatStartedAt = 0;
+    this.episodeHoldRepeatStepCount = 0;
+    this.episodeHoldRepeatTargetVideoId = "";
+  },
+
+  getEpisodeHoldRepeatInterval(stepCount = 0, elapsedMs = 0) {
+    if (elapsedMs >= 5000 || stepCount >= 40) {
+      return EPISODE_HOLD_REPEAT_MIN_INTERVAL_MS;
+    }
+    if (elapsedMs >= 3200 || stepCount >= 28) {
+      return 28;
+    }
+    if (elapsedMs >= 2000 || stepCount >= 18) {
+      return 42;
+    }
+    if (elapsedMs >= 1200 || stepCount >= 10) {
+      return 60;
+    }
+    if (elapsedMs >= 650 || stepCount >= 5) {
+      return 86;
+    }
+    return EPISODE_HOLD_REPEAT_MAX_INTERVAL_MS;
+  },
+
+  getEpisodeRepeatStepSize(stepCount = 0, elapsedMs = 0) {
+    if (elapsedMs >= 5000 || stepCount >= 40) {
+      return EPISODE_HOLD_REPEAT_STEP_MULTIPLIER_MAX;
+    }
+    if (elapsedMs >= 3200 || stepCount >= 28) {
+      return 24;
+    }
+    if (elapsedMs >= 2000 || stepCount >= 18) {
+      return 16;
+    }
+    if (elapsedMs >= 1200 || stepCount >= 10) {
+      return 10;
+    }
+    if (elapsedMs >= 650 || stepCount >= 5) {
+      return 6;
+    }
+    return 1;
+  },
+
+  moveEpisodeFocusWithAcceleration(direction) {
+    if (direction !== "left" && direction !== "right") {
+      return false;
+    }
+    const current = this.container?.querySelector(".series-episode-card.focusable.focused") || null;
+    if (!current) {
+      return false;
+    }
+    const videoId = String(current.dataset.videoId || "").trim();
+    const currentIndex = Number(current.dataset.episodeIndex || this.getEpisodeIndexByVideoId(videoId));
+    if (!Number.isFinite(currentIndex) || currentIndex < 0) {
+      return false;
+    }
+    const nextIndex = currentIndex + (direction === "left" ? -1 : 1);
+    return this.focusEpisodeByIndex(nextIndex, { preserveVerticalScroll: true });
+  },
+
+  startEpisodeHoldRepeat(direction, node) {
+    if (direction !== "left" && direction !== "right") {
+      return false;
+    }
+    const videoId = String(node?.dataset?.videoId || "").trim();
+    if (!videoId) {
+      return false;
+    }
+    const now = Date.now();
+    this.stopEpisodeHoldRepeat();
+    this.episodeHoldRepeatDirection = direction;
+    this.episodeHoldRepeatStartedAt = now;
+    this.episodeHoldRepeatStepCount = 0;
+    this.episodeHoldRepeatTargetVideoId = videoId;
+    const tick = () => {
+      if (!this.episodeHoldRepeatDirection) {
+        return;
+      }
+      const current = this.container?.querySelector(".series-episode-card.focusable.focused") || null;
+      if (!current) {
+        this.stopEpisodeHoldRepeat();
+        return;
+      }
+      if (!current.matches?.(".series-episode-card")) {
+        this.stopEpisodeHoldRepeat();
+        return;
+      }
+      const elapsedMs = Date.now() - this.episodeHoldRepeatStartedAt;
+      const stepSize = this.getEpisodeRepeatStepSize(this.episodeHoldRepeatStepCount, elapsedMs);
+      const moveCount = Math.max(1, stepSize);
+      this.episodeHoldRepeatStepCount += 1;
+      const step = this.episodeHoldRepeatDirection === "left" ? -moveCount : moveCount;
+      const didMove = this.focusEpisodeByIndex((Number(current.dataset.episodeIndex || this.getEpisodeIndexByVideoId(String(current.dataset.videoId || this.episodeHoldRepeatTargetVideoId || ""))) || 0) + step, {
+        preserveVerticalScroll: true,
+        animated: false
+      });
+      if (!didMove) {
+        this.stopEpisodeHoldRepeat();
+        return;
+      }
+      const nextInterval = this.getEpisodeHoldRepeatInterval(this.episodeHoldRepeatStepCount, elapsedMs);
+      this.episodeHoldRepeatTimer = setTimeout(tick, nextInterval);
+    };
+    this.episodeHoldRepeatTimer = setTimeout(tick, EPISODE_HOLD_REPEAT_INITIAL_DELAY_MS);
+    return true;
   },
 
   cancelPendingEpisodeHold() {
@@ -6710,6 +6856,25 @@ export const MetaDetailsScreen = {
       return;
     }
 
+    const direction = getDpadDirection(event);
+    const isEpisodeDirectionKey = Boolean(direction) && isEpisodeHoldTarget && (direction === "left" || direction === "right");
+    if (isEpisodeDirectionKey) {
+      event?.preventDefault?.();
+      if (event?.repeat) {
+        if (this.episodeHoldRepeatDirection === direction) {
+          return;
+        }
+      } else {
+        this.stopEpisodeHoldRepeat();
+        if (this.moveEpisodeFocusWithAcceleration(direction)) {
+          this.startEpisodeHoldRepeat(direction, currentFocusedNode);
+          return;
+        }
+      }
+    } else if (this.episodeHoldRepeatDirection) {
+      this.stopEpisodeHoldRepeat();
+    }
+
     if (this.handleSeriesDpad(event)) {
       return;
     }
@@ -6957,6 +7122,10 @@ export const MetaDetailsScreen = {
   },
 
   async onKeyUp(event) {
+    const direction = getDpadDirection(event);
+    if (direction === "left" || direction === "right") {
+      this.stopEpisodeHoldRepeat();
+    }
     if (Number(event?.keyCode || 0) !== 13) {
       return;
     }
@@ -6999,6 +7168,8 @@ export const MetaDetailsScreen = {
       cancelAnimationFrame(this.episodeVirtualSyncRaf);
       this.episodeVirtualSyncRaf = null;
     }
+    this.stopEpisodeHoldRepeat();
+    this.episodeThumbnailPrefetchCache = new Set();
     if (this.episodeTrackScrollNode && this.episodeTrackScrollHandler) {
       this.episodeTrackScrollNode.removeEventListener("scroll", this.episodeTrackScrollHandler);
     }
