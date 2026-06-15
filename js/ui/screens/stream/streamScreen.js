@@ -223,11 +223,10 @@ function flattenStreams(streamResult) {
         sourceType: stream.sourceType || stream.mimeType || stream.type || stream.source || "",
         raw: stream
       };
-      if (
-        DirectDebridResolver.shouldListStream(entry)
+      const canList = DirectDebridResolver.shouldListStream(entry)
         || WebOsEngineFsResolver.canResolveStream(entry)
-        || TizenStreamingServerResolver.canResolveStream(entry)
-      ) {
+        || TizenStreamingServerResolver.canResolveStream(entry);
+      if (canList) {
         flattened.push(entry);
       }
     });

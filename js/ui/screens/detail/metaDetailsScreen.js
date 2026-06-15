@@ -222,6 +222,11 @@ function resolvePlayableDetailType(itemType, meta = {}) {
   if (normalizedType === "series") {
     return "series";
   }
+  // Preserve live/channel types so stream requests hit the addon's registered
+  // stream endpoint (e.g. /stream/channel/{id}.json) instead of movie.
+  if (["channel", "live", "tvchannel"].includes(normalizedType)) {
+    return normalizedType;
+  }
   return "movie";
 }
 
