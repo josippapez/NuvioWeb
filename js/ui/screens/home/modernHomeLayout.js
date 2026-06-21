@@ -39,6 +39,7 @@ export function renderModernHomeLayout({
   createPosterCardMarkup,
   createSeeAllCardMarkup: _createSeeAllCardMarkup,
   formatCatalogRowTitle,
+  shouldDeferRowImages,
   escapeHtml,
   escapeAttribute
 } = {}) {
@@ -75,6 +76,9 @@ export function renderModernHomeLayout({
     const rowTitle = isCollectionRow
       ? String(rowData.collectionTitle || rowData.collection?.title || "Collection")
       : formatCatalogRowTitle(rowData.catalogName, rowData.type, showCatalogTypeSuffix);
+    const deferRowImages = typeof shouldDeferRowImages === "function"
+      ? shouldDeferRowImages(rowIndex, rowKey, focusedRowKey)
+      : false;
     const cardsMarkup = visibleItems.map((item, itemIndex) => createPosterCardMarkup(
       item,
       rowIndex,
@@ -84,7 +88,8 @@ export function renderModernHomeLayout({
       showPosterLabels,
       "modern",
       expandFocusedPoster && focusedRowKey === rowKey && focusedItemIndex === itemIndex,
-      preferLandscapePosters
+      preferLandscapePosters,
+      deferRowImages
     )).join("");
 
     sectionsMarkup.push(`

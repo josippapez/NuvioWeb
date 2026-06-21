@@ -6,6 +6,7 @@ import { StartupSyncService } from "../../core/profile/startupSyncService.js";
 import { CollectionSyncService } from "../../core/profile/collectionSyncService.js";
 import { HomeCatalogSettingsSyncService } from "../../core/profile/homeCatalogSettingsSyncService.js";
 import { ScreenUtils } from "../../ui/navigation/screen.js";
+import { Platform } from "../../platform/index.js";
 import { AvatarRepository } from "../../data/remote/supabase/avatarRepository.js";
 import { ThemeManager } from "../../ui/theme/themeManager.js";
 import { I18n } from "../../i18n/index.js";
@@ -318,6 +319,8 @@ export const ProfileSelectionScreen = {
     this.avatarCatalog = [];
     this.lastKeyboardActivation = null;
     this.suppressHoldMenuEnterUntilKeyUp = false;
+    this.isActivatingProfile = false;
+    this.activatingProfileId = "";
 
     await ProfileSyncService.pull();
     this.profiles = await ProfileManager.getProfiles();
@@ -1318,6 +1321,7 @@ export const ProfileSelectionScreen = {
   canHoldManageProfile(node) {
     return (
       !this.isManagementMode &&
+      !Platform.isWebOS() &&
       Boolean(node?.matches?.(".profile-card.focused, .profile-card")) &&
       String(node?.dataset?.profileId || "") !== "add"
     );
@@ -1895,25 +1899,43 @@ export const ProfileSelectionScreen = {
   },
 
   async activateProfile(profileId) {
-    if (!profileId) {
+    if (!profileId || this.isActivatingProfile) {
       return;
     }
-    await ProfileManager.setActiveProfile(profileId);
-    detailWatchedEnrichmentService.invalidateAllCache();
-    await ProfileSettingsSyncService.pull(profileId);
-    await CollectionSyncService.pull(profileId);
-    await HomeCatalogSettingsSyncService.pull(profileId);
-    StartupSyncService.syncPull().catch((error) => {
-      console.warn("Profile startup sync failed", error);
-    });
-    await I18n.init();
-    ThemeManager.apply();
-    I18n.apply();
-    Router.navigate("home", { forceReload: true });
+    this.isActivatingProfile = true;
+    this.activatingProfileId = String(profileId);
+    const profileCard =
+      Array.from(this.container?.querySelectorAll(".profile-card[data-profile-id]") || []).find(
+        (node) => String(node.dataset.profileId || "") === String(profileId)
+      ) || null;
+    profileCard?.classList?.add("is-activating");
+    try {
+      await ProfileManager.setActiveProfile(profileId);
+      detailWatchedEnrichmentService.invalidateAllCache();
+      await ProfileSettingsSyncService.pull(profileId);
+      await CollectionSyncService.pull(profileId);
+      await HomeCatalogSettingsSyncService.pull(profileId);
+      StartupSyncService.syncPull().catch((error) => {
+        console.warn("Profile startup sync failed", error);
+      });
+      await I18n.init();
+      ThemeManager.apply();
+      I18n.apply();
+      Router.navigate("home", { forceReload: true });
+    } catch (error) {
+      console.warn("Failed to activate profile", error);
+      this.isActivatingProfile = false;
+      this.activatingProfileId = "";
+      profileCard?.classList?.remove("is-activating");
+    }
   },
 
   async onKeyDown(event) {
     if (!this.container) {
+      return;
+    }
+    if (this.isActivatingProfile) {
+      event?.preventDefault?.();
       return;
     }
 

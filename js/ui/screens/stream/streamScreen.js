@@ -1346,7 +1346,7 @@ export const StreamScreen = {
         ? this.sourceChips.map((chip) => ({ ...chip }))
         : [],
       addonLogoLookup: this.addonLogoLookup ? { ...this.addonLogoLookup } : {},
-      listScrollTop: Number(list?.scrollTop || 0)
+      listScrollTop: this.getListScrollTop(list)
     };
   },
 
@@ -1901,7 +1901,7 @@ export const StreamScreen = {
     const listNode = target.closest(".stream-route-list");
     if (listNode) {
       this.ensureListItemVisible(listNode, target);
-      this.listScrollTop = Number(listNode.scrollTop || 0);
+      this.listScrollTop = this.getListScrollTop(listNode);
       this.scheduleFocusedListItemVisibilityCheck(listNode, target);
     }
     return true;
@@ -1919,6 +1919,34 @@ export const StreamScreen = {
     return this.focusElement(target);
   },
 
+  isLegacyWebOsRoute() {
+    return Boolean(
+      document.documentElement?.classList?.contains("legacy-webos") ||
+        document.body?.classList?.contains("legacy-webos")
+    );
+  },
+
+  getListScrollTop(listNode) {
+    if (!listNode) {
+      return 0;
+    }
+    if (listNode.classList?.contains("manual-scroll")) {
+      return Number(listNode.dataset?.manualScrollTop || 0);
+    }
+    return Number(listNode.scrollTop || 0);
+  },
+
+  applyManualListScroll(listNode, scrollTop) {
+    if (!listNode) {
+      return;
+    }
+    const normalized = Math.max(0, Number(scrollTop || 0));
+    listNode.classList.add("manual-scroll");
+    listNode.dataset.manualScrollTop = String(normalized);
+    listNode.style.setProperty("--stream-route-manual-scroll", `${-normalized}px`);
+    this.listScrollTop = normalized;
+  },
+
   setListScrollTop(listNode, nextScrollTop) {
     if (!listNode) {
       return;
@@ -1928,6 +1956,10 @@ export const StreamScreen = {
       Number(listNode.scrollHeight || 0) - Number(listNode.clientHeight || 0)
     );
     const normalized = clamp(Number(nextScrollTop || 0), 0, maxScrollTop);
+    if (listNode.classList?.contains("manual-scroll")) {
+      this.applyManualListScroll(listNode, normalized);
+      return;
+    }
     listNode.scrollTop = normalized;
     if (typeof listNode.scrollTo === "function") {
       try {
@@ -1936,14 +1968,24 @@ export const StreamScreen = {
         listNode.scrollTop = normalized;
       }
     }
-    this.listScrollTop = Number(listNode.scrollTop || normalized || 0);
+    const applied = Number(listNode.scrollTop || 0);
+    if (
+      this.isLegacyWebOsRoute() &&
+      maxScrollTop > 0 &&
+      normalized > 0 &&
+      Math.abs(applied - normalized) > 2
+    ) {
+      this.applyManualListScroll(listNode, normalized);
+      return;
+    }
+    this.listScrollTop = Number(applied || normalized || 0);
   },
 
   ensureListItemVisible(listNode, target) {
     if (!listNode || !target) {
       return;
     }
-    const viewTop = Number(listNode.scrollTop || 0);
+    const viewTop = this.getListScrollTop(listNode);
     let itemTop = Number(target.offsetTop || 0);
     let itemBottom = itemTop + Number(target.offsetHeight || 0);
     if (
@@ -2491,7 +2533,7 @@ export const StreamScreen = {
     list.addEventListener(
       "scroll",
       () => {
-        this.listScrollTop = Number(list.scrollTop || 0);
+        this.listScrollTop = this.getListScrollTop(list);
       },
       { passive: true }
     );

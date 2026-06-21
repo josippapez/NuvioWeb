@@ -5,7 +5,6 @@ export const SUPABASE_ANON_KEY = String(runtimeEnv.SUPABASE_ANON_KEY || "").trim
 export const TV_LOGIN_REDIRECT_BASE_URL = String(
   runtimeEnv.TV_LOGIN_REDIRECT_BASE_URL || ""
 ).trim();
-export const PUBLIC_APP_URL = String(runtimeEnv.PUBLIC_APP_URL || "").trim();
 export const YOUTUBE_PROXY_URL = String(
   runtimeEnv.YOUTUBE_PROXY_URL || "youtube-proxy.html"
 ).trim();
@@ -16,7 +15,6 @@ export const AVATAR_PUBLIC_BASE_URL = String(runtimeEnv.AVATAR_PUBLIC_BASE_URL |
 export const CONTRIBUTIONS_URL = String(runtimeEnv.CONTRIBUTIONS_URL || "").trim();
 export const DONATIONS_BASE_URL = String(runtimeEnv.DONATIONS_BASE_URL || "").trim();
 export const DONATIONS_DONATE_URL = String(runtimeEnv.DONATIONS_DONATE_URL || "").trim();
-export const TIZEN_ENGINEFS_SERVICE_ID = String(runtimeEnv.TIZEN_ENGINEFS_SERVICE_ID || "").trim();
 export const TMDB_API_KEY = String(runtimeEnv.TMDB_API_KEY || "").trim();
 export const TRAKT_CLIENT_ID = String(runtimeEnv.TRAKT_CLIENT_ID || "").trim();
 export const TRAKT_CLIENT_SECRET = String(runtimeEnv.TRAKT_CLIENT_SECRET || "").trim();

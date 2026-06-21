@@ -1,4 +1,3 @@
-import { TIZEN_ENGINEFS_SERVICE_ID } from "../../config.js";
 import { Platform } from "../index.js";
 
 const LOCAL_BASE_URLS = [
@@ -32,9 +31,7 @@ function withTimeout(promise, timeoutMs, message) {
 }
 
 function getServiceId() {
-  const configured = String(
-    TIZEN_ENGINEFS_SERVICE_ID || globalThis.__NUVIO_TIZEN_ENGINEFS_SERVICE_ID__ || ""
-  ).trim();
+  const configured = String(globalThis.__NUVIO_TIZEN_ENGINEFS_SERVICE_ID__ || "").trim();
   if (configured) {
     return configured;
   }

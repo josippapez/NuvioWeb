@@ -10,7 +10,6 @@
       typeof existing.TV_LOGIN_REDIRECT_BASE_URL === "undefined"
         ? ""
         : existing.TV_LOGIN_REDIRECT_BASE_URL,
-    PUBLIC_APP_URL: typeof existing.PUBLIC_APP_URL === "undefined" ? "" : existing.PUBLIC_APP_URL,
     YOUTUBE_PROXY_URL:
       typeof existing.YOUTUBE_PROXY_URL === "undefined"
         ? "youtube-proxy.html"
@@ -25,10 +24,12 @@
         : existing.IMDB_RATINGS_API_BASE_URL,
     AVATAR_PUBLIC_BASE_URL:
       typeof existing.AVATAR_PUBLIC_BASE_URL === "undefined" ? "" : existing.AVATAR_PUBLIC_BASE_URL,
-    TIZEN_ENGINEFS_SERVICE_ID:
-      typeof existing.TIZEN_ENGINEFS_SERVICE_ID === "undefined"
-        ? ""
-        : existing.TIZEN_ENGINEFS_SERVICE_ID,
+    CONTRIBUTIONS_URL:
+      typeof existing.CONTRIBUTIONS_URL === "undefined" ? "" : existing.CONTRIBUTIONS_URL,
+    DONATIONS_BASE_URL:
+      typeof existing.DONATIONS_BASE_URL === "undefined" ? "" : existing.DONATIONS_BASE_URL,
+    DONATIONS_DONATE_URL:
+      typeof existing.DONATIONS_DONATE_URL === "undefined" ? "" : existing.DONATIONS_DONATE_URL,
     TMDB_API_KEY: typeof existing.TMDB_API_KEY === "undefined" ? "" : existing.TMDB_API_KEY,
     TRAKT_CLIENT_ID:
       typeof existing.TRAKT_CLIENT_ID === "undefined" ? "" : existing.TRAKT_CLIENT_ID,

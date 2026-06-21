@@ -1876,6 +1876,7 @@ function renderLegacyCatalogRowsMarkup(rows = [], options = {}) {
       : (layoutMode === "grid"
         ? rowItems.slice(0, gridLimit)
         : rowItems.slice(0, maxItems));
+    const deferRowImages = shouldDeferHomeRowImages(rowIndex, rowKey, focusedRowKey);
     const cardsMarkup = visibleItems.map((item, itemIndex) => createPosterCardMarkup(
       item,
       rowIndex,
@@ -1884,7 +1885,9 @@ function renderLegacyCatalogRowsMarkup(rows = [], options = {}) {
       rowData,
       showPosterLabels,
       layoutMode,
-      expandFocusedPoster && focusedRowKey === rowKey && focusedItemIndex === itemIndex
+      expandFocusedPoster && focusedRowKey === rowKey && focusedItemIndex === itemIndex,
+      false,
+      deferRowImages
     )).join("");
     const trackMarkup = `
       <div class="${layoutMode === "grid" ? "home-grid-track" : "home-track"}" data-track-row-key="${escapeAttribute(rowKey)}">
@@ -1962,7 +1965,26 @@ function groupNodesByOffsetTop(nodes = []) {
   return grouped.map((entry) => entry.nodes);
 }
 
-export function createPosterCardMarkup(item, rowIndex, itemIndex, itemType, rowData = null, showLabels = true, layoutMode = "classic", isExpanded = false, preferLandscapePoster = false) {
+function shouldDeferHomeRowImages(rowIndex = 0, rowKey = "", focusedRowKey = "") {
+  const safeRowIndex = Math.max(0, Number(rowIndex || 0));
+  const focused = String(focusedRowKey || "").trim();
+  if (focused && String(rowKey || "") === focused) {
+    return false;
+  }
+  const eagerRows = Platform.isWebOS() || Platform.isTizen() ? 3 : 5;
+  return safeRowIndex >= eagerRows;
+}
+
+function buildLazyImageAttributes(src = "", { defer = false, highPriority = false } = {}) {
+  const safeSrc = escapeAttribute(src);
+  const priority = highPriority ? ' fetchpriority="high"' : "";
+  if (defer) {
+    return `data-src="${safeSrc}" loading="lazy" decoding="async"${priority}`;
+  }
+  return `src="${safeSrc}" loading="lazy" decoding="async"${priority}`;
+}
+
+export function createPosterCardMarkup(item, rowIndex, itemIndex, itemType, rowData = null, showLabels = true, layoutMode = "classic", isExpanded = false, preferLandscapePoster = false, deferImages = false) {
   const suppressPosterText = Boolean(rowData?.suppressPosterText);
   const rowKey = String(rowData?.homeCatalogKey || buildModernRowKey(rowData || {})).trim();
   const collectionSeed = rowData?.rowKind === "collection"
@@ -1988,7 +2010,7 @@ export function createPosterCardMarkup(item, rowIndex, itemIndex, itemType, rowD
       ? `<img class="home-poster-focus-gif" data-src="${escapeAttribute(collectionItem.focusGifUrl)}" alt="" aria-hidden="true" />`
       : "";
     const contentMarkup = visualSrc
-      ? `<img class="content-poster" src="${escapeAttribute(visualSrc)}" decoding="async" loading="lazy" alt="${escapeAttribute(collectionItem.name || collectionItem.heroTitle || collectionItem.collectionTitle || "collection")}" />`
+      ? `<img class="content-poster" ${buildLazyImageAttributes(visualSrc, { defer: deferImages })} alt="${escapeAttribute(collectionItem.name || collectionItem.heroTitle || collectionItem.collectionTitle || "collection")}" />`
       : (collectionItem.coverEmoji
         ? `<div class="home-collection-emoji" aria-hidden="true">${escapeHtml(collectionItem.coverEmoji)}</div>`
         : '<div class="content-poster placeholder"></div>');
@@ -2080,7 +2102,7 @@ export function createPosterCardMarkup(item, rowIndex, itemIndex, itemType, rowD
              data-logo-src="${escapeAttribute(normalized.logo || "")}"`}>
       <div class="home-poster-frame">
         ${(!isLoading && posterSrc)
-      ? `<img class="content-poster" src="${escapeAttribute(posterSrc)}" decoding="async" loading="lazy" alt="${escapeAttribute(normalized.name || "content")}" />`
+      ? `<img class="content-poster" ${buildLazyImageAttributes(posterSrc, { defer: deferImages })} alt="${escapeAttribute(normalized.name || "content")}" />`
       : '<div class="content-poster placeholder"></div>'}
         ${(!isLoading && expandedVisualSrc)
       ? `<img class="home-poster-expanded-backdrop" data-src="${escapeAttribute(expandedVisualSrc)}" decoding="async" loading="lazy" alt="" aria-hidden="true" />`
@@ -2095,7 +2117,7 @@ export function createPosterCardMarkup(item, rowIndex, itemIndex, itemType, rowD
         ${(!isLoading && useLandscapePoster && !suppressPosterText) ? `
           <div class="home-poster-landscape-copy" aria-hidden="true">
             ${normalized.logo
-      ? `<img class="home-poster-landscape-logo" src="${escapeAttribute(normalized.logo)}" decoding="async" loading="lazy" alt="" />`
+      ? `<img class="home-poster-landscape-logo" ${buildLazyImageAttributes(normalized.logo, { defer: deferImages })} alt="" />`
       : `<div class="home-poster-landscape-title">${escapeHtml(normalized.name || "Untitled")}</div>`}
             ${subtitle ? `<div class="home-poster-landscape-subtitle">${escapeHtml(subtitle)}</div>` : ""}
           </div>
@@ -3387,6 +3409,7 @@ export const HomeScreen = {
     target.classList.add("focused");
     this.setCurrentFocusedNode(target);
     this.focusWithoutAutoScroll(target, { suppressDelegatedFocus });
+    this.scheduleHomeLazyImageHydration(target);
     return target;
   },
 
@@ -7109,6 +7132,7 @@ export const HomeScreen = {
         createPosterCardMarkup,
         createSeeAllCardMarkup,
         formatCatalogRowTitle,
+        shouldDeferRowImages: shouldDeferHomeRowImages,
         escapeHtml,
         escapeAttribute
       });
@@ -7282,6 +7306,7 @@ export const HomeScreen = {
     this.renderedLayoutMode = this.layoutMode;
     this.ensureHomeTruncationObservers();
     this.scheduleHomeTruncationUpdate();
+    this.scheduleHomeLazyImageHydration();
     this.scheduleReturnFocusRestore();
     const mountedRows = Number(this.navModel?.rows?.length || 0);
     const mountedCards = Number((this.navModel?.rows || []).reduce((total, rowNodes) => total + rowNodes.length, 0));
@@ -7293,6 +7318,67 @@ export const HomeScreen = {
       mountedCards,
       continueWatching: Number(this.continueWatchingDisplay?.length || 0),
       focusables: Number(mountedCards + (this.navModel?.sidebar?.length || 0))
+    });
+  },
+
+  scheduleHomeLazyImageHydration(anchorNode = null) {
+    if (anchorNode instanceof HTMLElement) {
+      this.pendingHomeLazyImageAnchor = anchorNode;
+    }
+    if (this.homeLazyImageHydrationRaf) {
+      return;
+    }
+    this.homeLazyImageHydrationRaf = requestAnimationFrame(() => {
+      this.homeLazyImageHydrationRaf = 0;
+      const anchor = this.pendingHomeLazyImageAnchor || this.getCurrentFocusedNode();
+      this.pendingHomeLazyImageAnchor = null;
+      this.hydrateHomeLazyImages(anchor);
+    });
+  },
+
+  hydrateHomeLazyImages(anchorNode = null) {
+    if (!this.container) {
+      return;
+    }
+    const images = Array.from(
+      this.container.querySelectorAll(
+        ".home-main .content-poster[data-src], .home-main .home-poster-landscape-logo[data-src]"
+      )
+    );
+    if (!images.length) {
+      return;
+    }
+    const viewport = this.container.querySelector(".home-modern-rows-viewport")
+      || this.container.querySelector(".home-main")
+      || this.container;
+    const viewportRect = viewport.getBoundingClientRect();
+    const anchorRow = anchorNode?.closest?.(
+      ".home-row, .home-modern-row, .home-grid-section, .home-row-continue"
+    ) || null;
+    const verticalMargin = Platform.isWebOS() || Platform.isTizen() ? 720 : 1200;
+    const horizontalMargin = Platform.isWebOS() || Platform.isTizen() ? 520 : 1000;
+    images.forEach((image) => {
+      if (!(image instanceof HTMLImageElement)) {
+        return;
+      }
+      const src = String(image.dataset.src || "").trim();
+      if (!src) {
+        image.removeAttribute("data-src");
+        return;
+      }
+      const row = image.closest(".home-row, .home-modern-row, .home-grid-section, .home-row-continue");
+      const shouldHydrateFocusedRow = Boolean(anchorRow && row === anchorRow);
+      const rect = image.getBoundingClientRect();
+      const isNearViewport =
+        rect.bottom >= viewportRect.top - verticalMargin &&
+        rect.top <= viewportRect.bottom + verticalMargin &&
+        rect.right >= viewportRect.left - horizontalMargin &&
+        rect.left <= viewportRect.right + horizontalMargin;
+      if (!shouldHydrateFocusedRow && !isNearViewport) {
+        return;
+      }
+      image.src = src;
+      image.removeAttribute("data-src");
     });
   },
 
