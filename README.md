@@ -50,12 +50,12 @@ This workaround should only be temporary. Once signed macOS builds are included 
 
 ### webOS Homebrew
 
-- For Homebrew Channel repository install: open `Homebrew Channel`, go to `Settings`, choose `Add repository`, enter `https://raw.githubusercontent.com/NuvioMedia/NuvioWebOS/main/webosbrew/apps.json`, return to the apps list, and install Nuvio TV from there
+- For Homebrew Channel repository install: open `Homebrew Channel`, go to `Settings`, choose `Add repository`, enter `https://raw.githubusercontent.com/NuvioMedia/NuvioTVWebOS/main/webosbrew/apps.json`, return to the apps list, and install Nuvio TV from there
 
 ### Platform Repositories
 
 - TizenBrew wrapper: `NuvioMedia/NuvioTVTizen`
-- webOS metadata repo: `NuvioMedia/NuvioWebOS`
+- webOS metadata repo: `NuvioMedia/NuvioTVWebOS`
 - Desktop installer repo: `NuvioMedia/NuvioWebTVInstaller`
 
 ## Origins / Credits
