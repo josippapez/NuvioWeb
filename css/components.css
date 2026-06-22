@@ -8530,6 +8530,7 @@ button:focus-visible {
   padding: 6px 12px;
   border-radius: 999px;
   border: 1px solid var(--border-color);
+  background: rgba(26, 26, 26, 0.94);
   background: rgb(var(--bg-elevated-rgb) / 0.94);
   color: var(--text-secondary);
   font-size: 12px;
@@ -8552,7 +8553,12 @@ button:focus-visible {
 .settings-layout-preview::after {
   content: "";
   position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   inset: 0;
+  border: 1px solid rgba(255, 255, 255, 0.05);
   border: 1px solid rgb(255 255 255 / 0.05);
   border-radius: inherit;
   pointer-events: none;
@@ -8598,6 +8604,7 @@ button:focus-visible {
   width: calc(100% - (var(--settings-layout-modern-side) * 2));
   height: 62%;
   border-radius: 6px;
+  background: rgba(255, 255, 255, 0.38);
   background: rgb(255 255 255 / 0.38);
 }
 
@@ -8618,10 +8625,12 @@ button:focus-visible {
   flex: 0 0 auto;
   height: 100%;
   aspect-ratio: 1.45 / 1;
+  background: rgba(255, 255, 255, 0.28);
   background: rgb(255 255 255 / 0.28);
 }
 
 .settings-layout-preview-modern-card.is-strong {
+  background: rgba(255, 255, 255, 0.46);
   background: rgb(255 255 255 / 0.46);
 }
 
@@ -8654,10 +8663,12 @@ button:focus-visible {
 .settings-layout-preview-grid-cell {
   width: 100%;
   height: 100%;
+  background: rgba(255, 255, 255, 0.5);
   background: rgb(255 255 255 / 0.5);
 }
 
 .settings-layout-preview-grid-cell.is-dim {
+  background: rgba(255, 255, 255, 0.3);
   background: rgb(255 255 255 / 0.3);
 }
 
@@ -8685,10 +8696,12 @@ button:focus-visible {
   flex: 0 0 auto;
   height: 85%;
   aspect-ratio: 2.1 / 1;
+  background: rgba(255, 255, 255, 0.3);
   background: rgb(255 255 255 / 0.3);
 }
 
 .settings-layout-preview-classic-card.is-strong {
+  background: rgba(255, 255, 255, 0.6);
   background: rgb(255 255 255 / 0.6);
 }
 
