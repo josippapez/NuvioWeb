@@ -20,6 +20,7 @@ function escapeHtml(value) {
 }
 
 const PHONE_MANAGER_URL = "https://nuvio.tv/account?tab=addons";
+const ADDONS_ROUTE_ENTER_DURATION_MS = 350;
 
 async function getPhoneManagerUrl() {
   return PHONE_MANAGER_URL;
@@ -37,8 +38,20 @@ export const PluginScreen = {
     this.model = await this.collectModel();
     await this.render({ refreshModel: false });
     if (AuthManager.isAuthenticated) {
-      void this.refreshAddons();
+      this.scheduleInitialRefresh();
     }
+  },
+
+  scheduleInitialRefresh() {
+    if (this.initialRefreshTimer) {
+      clearTimeout(this.initialRefreshTimer);
+    }
+    this.initialRefreshTimer = setTimeout(() => {
+      this.initialRefreshTimer = null;
+      if (Router.getCurrent() === "plugin") {
+        void this.refreshAddons();
+      }
+    }, ADDONS_ROUTE_ENTER_DURATION_MS + 80);
   },
 
   async collectModel() {
@@ -195,10 +208,10 @@ export const PluginScreen = {
       await this.closeQrOverlay();
     });
 
-    const shouldPlayRouteEnter = Boolean(this.pluginRouteEnterPending);
+    const enterClass = this.pluginRouteEnterPending ? " nuvio-route-slide-enter" : "";
     this.container.innerHTML = `
       <div class="addons-shell addons-route-shell">
-        <div class="addons-route-content">
+        <div class="addons-route-content${enterClass}">
           <main class="home-main addons-main addons-main-centered">
             <div class="addons-panel addons-panel-centered">
               <section class="addons-hero-card">
@@ -284,16 +297,6 @@ export const PluginScreen = {
     this.bindContentEvents();
     this.normalizeFocus();
     this.applyFocus();
-    if (shouldPlayRouteEnter) {
-      const routeContent = this.container.querySelector(".addons-route-content");
-      if (routeContent) {
-        routeContent.classList.remove("nuvio-route-slide-enter");
-        void routeContent.offsetWidth;
-        requestAnimationFrame(() => {
-          routeContent.classList.add("nuvio-route-slide-enter");
-        });
-      }
-    }
     this.renderQrCode();
   },
 
@@ -412,6 +415,10 @@ export const PluginScreen = {
   },
 
   cleanup() {
+    if (this.initialRefreshTimer) {
+      clearTimeout(this.initialRefreshTimer);
+      this.initialRefreshTimer = null;
+    }
     ScreenUtils.hide(this.container);
   }
 };
