@@ -1,41 +1,29 @@
 <div align="center">
-  <img src="assets/brand/app_logo_wordmark.png" alt="NuvioTV Web" width="300" />
+  <img src="https://github.com/tapframe/NuvioTV/raw/main/assets/brand/app_logo_wordmark.png" alt="NuvioTV Web" width="300" />
   <br />
   <br />
   <p>
-    A modern TV web app for Samsung Tizen and LG webOS powered by the Stremio addon ecosystem.
+    A modern smart TV media player for Samsung Tizen and LG webOS powered by the Stremio addon ecosystem.
     <br />
-    Shared web app • Tizen • webOS • Desktop installer • Playback-focused experience
+    Stremio addon ecosystem • Tizen • webOS • TV optimized • Playback-focused experience
   </p>
 </div>
 
 About
 
-NuvioTV Web is the shared web codebase for the Nuvio TV experience on smart TVs.
+NuvioTV Web is a modern media player designed specifically for Samsung Tizen and LG webOS TVs.
 
-It powers TV builds for Samsung Tizen and LG webOS, while also running as a normal browser-based web app during development.
+It acts as a client-side playback interface that can integrate with the Stremio addon ecosystem for content discovery and source resolution through user-installed extensions.
 
-NuvioTV Web acts as a client-side playback interface that can integrate with the Stremio addon ecosystem for content discovery and source resolution through user-installed extensions.
-
-The project is optimized for a TV-first experience, with remote-control navigation, platform-specific playback handling, and packaged builds for supported TV ecosystems.
+Built as a shared web app and optimized for a TV-first viewing experience, remote-control navigation, and platform-specific playback behavior.
 
 Installation
 
 Nuvio WebTV Installer
 
-Download the latest Windows or macOS Nuvio WebTV Installer build from GitHub Releases.
+Download the latest Windows or macOS installer from GitHub Releases.
 
 The installer can connect to supported Samsung Tizen and LG webOS TVs and install the latest .wgt and .ipk packages automatically.
-
-macOS note
-
-Current public macOS installer builds may be unsigned. If macOS blocks the app or reports that it is damaged, move the app to Applications and run:
-
-xattr -dr com.apple.quarantine "/Applications/Nuvio WebTV Installer.app"
-codesign --force --deep --sign - "/Applications/Nuvio WebTV Installer.app"
-open "/Applications/Nuvio WebTV Installer.app"
-
-This workaround should only be temporary. Once signed macOS builds are available, this manual step will no longer be needed.
 
 Samsung Tizen
 
@@ -45,9 +33,9 @@ TizenBrew
 * Add the GitHub module NuvioMedia/NuvioTVTizen.
 * Launch Nuvio TV from your installed modules.
 
-Manual WGT install
+Manual Install
 
-Download the latest .wgt package from GitHub Releases and install it with your preferred Samsung/Tizen development workflow.
+Download the latest .wgt package from GitHub Releases and install it using your preferred Samsung Tizen development workflow.
 
 LG webOS
 
@@ -56,27 +44,14 @@ Homebrew Channel
 * Open Homebrew Channel on your LG webOS TV.
 * Go to Settings.
 * Choose Add repository.
-* Enter:
-
-https://raw.githubusercontent.com/NuvioMedia/NuvioTVWebOS/main/webosbrew/apps.json
-
+* Enter https://raw.githubusercontent.com/NuvioMedia/NuvioTVWebOS/main/webosbrew/apps.json.
 * Return to the apps list and install Nuvio TV.
 
-Manual IPK install
+Manual Install
 
 Download the latest .ipk package from GitHub Releases.
 
-Enable Developer Mode and Key Server by following the webOS Homebrew guide:
-
-https://www.webosbrew.org/devmode
-
-Then install the package with webOS Dev Manager or your preferred webOS development workflow.
-
-Platform Repositories
-
-* TizenBrew wrapper: NuvioMedia/NuvioTVTizen
-* webOS metadata repository: NuvioMedia/NuvioTVWebOS
-* Desktop installer: NuvioMedia/NuvioWebTVInstaller
+Enable Developer Mode and Key Server by following the webOS Homebrew Developer Mode guide, then install the package with webOS Dev Manager.
 
 Development
 
@@ -84,9 +59,9 @@ Prerequisites
 
 * Node.js
 * npm
-* Python 3, for local static hosting
-* Tizen Studio, only if building or installing Tizen packages manually
-* webOS CLI tools, only if building or installing webOS packages manually
+* Python 3
+* Tizen Studio, for manual Tizen packaging or installation
+* webOS CLI tools, for manual webOS packaging or installation
 
 Setup
 
@@ -94,29 +69,14 @@ git clone https://github.com/NuvioMedia/NuvioWeb.git
 cd NuvioWeb
 npm install
 
-Run the Web App Locally
+Run Locally
 
 npm run build
 python3 -m http.server 8080 -d dist
 
-Open:
+Open http://127.0.0.1:8080.
 
-http://127.0.0.1:8080
-
-Project Structure
-
-* js/ contains app logic, UI screens, platform adapters, and player code.
-* css/ contains shared styling and TV layout rules.
-* assets/ contains icons, branding, and bundled assets.
-* docs/ contains static runtime helper pages used by the app.
-* scripts/ contains build, packaging, sync, and metadata tooling.
-* dist/ contains generated build output.
-
-Building TV Packages
-
-webOS
-
-Build a local .ipk package directly from this repository:
+Build webOS Package
 
 npm run package:webos
 
@@ -129,75 +89,35 @@ Useful webOS commands:
 npm run inspect:webos -- -d lg
 npm run logs:webos -- -d lg
 
-Tizen
-
-Build a local .wgt package directly from this repository:
+Build Tizen Package
 
 npm run package:tizen
 
-The package is generated in the repository root using the current app version.
+This creates a .wgt package in the repository root.
 
 Default identifiers:
 
 * Tizen package id: NuvioTV
 * Tizen application id: NuvioTV.NuvioTV
 
-You can override them when needed:
+Override them when needed:
 
 TIZEN_PACKAGE_ID=NuvioTV TIZEN_APP_ID=NuvioTV.NuvioTV npm run package:tizen
 
-To package with a specific properties file:
+Project Structure
 
-npm run package:tizen -- --env-source /absolute/path/to/local.properties
+* js/ app logic, UI screens, platform adapters, and player code
+* css/ shared styling and TV layout rules
+* assets/ icons, branding, and bundled assets
+* docs/ static runtime helper pages used by the app
+* scripts/ build, packaging, sync, and metadata tooling
+* dist/ generated build output
 
-Syncing Custom Wrapper Projects
+Platform Repositories
 
-The shared app can also be synced into external Tizen or webOS wrapper projects.
-
-webOS wrapper
-
-Create a webOS project folder with at least:
-
-YourWebOSProject/
-  appinfo.json
-  index.html
-  main.js
-
-Then run:
-
-npm run build
-npm run sync:webos -- /absolute/path/to/YourWebOSProject
-
-Tizen wrapper
-
-Create a Tizen project folder with at least:
-
-YourTizenProject/
-  config.xml
-  index.html
-  main.js
-
-Then run:
-
-npm run build
-npm run sync:tizen -- /absolute/path/to/YourTizenProject
-
-Compatibility form:
-
-npm run sync -- --webos --path /absolute/path/to/project
-npm run sync -- --tizen --path /absolute/path/to/project
-
-Hosted vs Packaged
-
-NuvioTV Web can run in different deployment modes:
-
-* Hosted as a normal web app.
-* Packaged as a Samsung Tizen .wgt.
-* Packaged as an LG webOS .ipk.
-* Installed through the Nuvio WebTV Installer.
-* Used through platform wrapper repositories such as TizenBrew and webOS Homebrew.
-
-The shared web app remains the source of truth for the TV experience across these targets.
+* TizenBrew wrapper: NuvioMedia/NuvioTVTizen
+* webOS metadata repository: NuvioMedia/NuvioTVWebOS
+* Desktop installer: NuvioMedia/NuvioWebTVInstaller
 
 Origins / Credits
 
@@ -209,8 +129,6 @@ This project is part of the Nuvio TV ecosystem and builds on important community
 * WhiteGiso/NuvioTV-WebOS
     The community webOS codebase that served as an early inspiration and base for this shared web version.
     https://github.com/WhiteGiso/NuvioTV-WebOS
-
-NuvioTV Web expands that foundation into a shared smart TV web app for Samsung Tizen and LG webOS.
 
 Legal & DMCA
 
@@ -227,7 +145,7 @@ Built With
 * CSS
 * Samsung Tizen Web APIs
 * LG webOS APIs
-* Node.js build tooling
+* Node.js
 * Stremio addon ecosystem
 
 Star History
