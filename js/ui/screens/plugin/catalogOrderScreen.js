@@ -259,6 +259,10 @@ export const CatalogOrderScreen = {
     }
 
     if (code === 13) {
+      // Prevent the focused button's native click from also firing, otherwise
+      // the action runs twice and rows jump two slots at a time.
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
       await this.activateFocused();
     }
   },
