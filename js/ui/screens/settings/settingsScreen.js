@@ -629,7 +629,7 @@ function renderLayoutPreviewMarkup(layoutId) {
       <span class="settings-layout-preview-modern-stage">
         <span class="settings-layout-preview-modern-hero"></span>
         <span class="settings-layout-preview-modern-row">
-          ${Array.from({ length: 9 }, (_, index) => `<span class="settings-layout-preview-modern-card${index % 3 === 1 ? " is-strong" : ""}"></span>`).join("")}
+          ${Array.from({ length: 12 }, (_, index) => `<span class="settings-layout-preview-modern-card${index % 3 === 1 ? " is-strong" : ""}"></span>`).join("")}
         </span>
       </span>
     `;
@@ -658,6 +658,20 @@ function renderLayoutPreviewMarkup(layoutId) {
       </span>
       <span class="settings-layout-preview-classic-row is-bottom">
         ${Array.from({ length: 7 }, () => '<span class="settings-layout-preview-classic-card"></span>').join("")}
+      </span>
+    </span>
+  `;
+}
+
+function renderLayoutPreviewPlaceholderMarkup() {
+  return `
+    <span class="settings-layout-preview-placeholder" aria-hidden="true">
+      <span class="settings-layout-placeholder-line is-short"></span>
+      <span class="settings-layout-placeholder-panel"></span>
+      <span class="settings-layout-placeholder-bars">
+        <span class="settings-layout-placeholder-line"></span>
+        <span class="settings-layout-placeholder-line"></span>
+        <span class="settings-layout-placeholder-line"></span>
       </span>
     </span>
   `;
@@ -1940,6 +1954,7 @@ export const SettingsScreen = {
               data-zone="content"
               ${this.registerAction(focusKey, this.actionMap.get(focusKey))}>
         <span class="settings-layout-badge">${escapeHtml(t("common.beta", {}, "Beta"))}</span>
+        ${renderLayoutPreviewPlaceholderMarkup()}
         <span class="settings-layout-preview settings-layout-preview-${escapeHtml(option.id)}">${renderLayoutPreviewMarkup(option.id)}</span>
         <span class="settings-layout-name">${escapeHtml(translateOptionLabel(option))}</span>
       </button>
