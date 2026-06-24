@@ -10179,6 +10179,9 @@ button:focus-visible {
   bottom: 0;
   left: 0;
   inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
   pointer-events: none;
 }
 
@@ -14265,7 +14268,7 @@ button:focus-visible {
   height: 100%;
   background: var(--detail-bg) right top / cover no-repeat;
   opacity: 1;
-  transition: opacity 800ms ease;
+  transition: opacity 800ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .series-detail-shell.detail-scrolled .series-detail-backdrop {
@@ -14282,7 +14285,7 @@ button:focus-visible {
   inset: 0;
   z-index: 0;
   opacity: 0;
-  transition: opacity 300ms ease;
+  transition: opacity 300ms cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
 }
 
@@ -14292,6 +14295,32 @@ button:focus-visible {
 
 .detail-trailer-active.detail-trailer-ready .detail-trailer-layer {
   opacity: 1;
+}
+
+.detail-trailer-loading-spinner {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  inset: 0;
+  z-index: 3;
+  display: none;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.detail-trailer-active .detail-trailer-loading-spinner {
+  display: block;
+}
+
+.detail-trailer-active:not(.detail-trailer-ready) .detail-trailer-loading-spinner {
+  opacity: 1;
+}
+
+.detail-trailer-ready .detail-trailer-loading-spinner {
+  opacity: 0;
 }
 
 .detail-trailer-manual .detail-trailer-layer {
@@ -14508,12 +14537,12 @@ button:focus-visible {
   pointer-events: none;
 }
 
-.detail-trailer-manual.detail-trailer-ready .series-detail-content {
+.detail-trailer-manual .series-detail-content {
   pointer-events: none;
   opacity: 0;
 }
 
-.detail-trailer-active.detail-trailer-ready .series-detail-backdrop {
+.detail-trailer-active .series-detail-backdrop {
   opacity: 0;
 }
 
@@ -14539,10 +14568,10 @@ button:focus-visible {
     rgb(var(--bg-color-rgb) / 0) 78%,
     rgb(var(--bg-color-rgb) / 0) 100%
   );
-  transition: opacity 800ms ease;
+  transition: opacity 800ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.detail-trailer-active.detail-trailer-ready .series-detail-vignette {
+.detail-trailer-active .series-detail-vignette {
   opacity: 0;
 }
 
@@ -14561,7 +14590,7 @@ button:focus-visible {
   z-index: 0;
   opacity: 0;
   background: none;
-  transition: opacity 300ms ease;
+  transition: opacity 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .series-detail-shell.detail-scrolled .detail-bottom-shadow {
@@ -14578,7 +14607,7 @@ button:focus-visible {
   padding: 0 0 clamp(116px, 12vh, 168px);
   box-sizing: border-box;
   scrollbar-width: none;
-  transition: opacity 400ms ease;
+  transition: opacity 400ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .series-detail-content::-webkit-scrollbar {
@@ -14608,9 +14637,8 @@ button:focus-visible {
   transform: translateY(0);
   visibility: visible;
   transition:
-    max-height 600ms ease,
-    opacity 400ms ease,
-    transform 400ms ease,
+    max-height 600ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 400ms cubic-bezier(0.4, 0, 0.2, 1),
     visibility 0s linear 0s;
 }
 
@@ -14622,12 +14650,12 @@ button:focus-visible {
   margin-bottom: clamp(18px, 1.4vw, 26px);
   transform-origin: left bottom;
   transition:
-    max-width 600ms ease,
-    max-height 600ms ease,
-    margin-bottom 600ms ease;
+    max-width 600ms cubic-bezier(0.4, 0, 0.2, 1),
+    max-height 600ms cubic-bezier(0.4, 0, 0.2, 1),
+    margin-bottom 600ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.detail-trailer-autoplay.detail-trailer-ready .series-detail-logo {
+.detail-trailer-autoplay .series-detail-logo {
   max-width: min(28vw, 380px);
   max-height: clamp(72px, 6vh, 96px);
   margin-bottom: 24px;
@@ -14640,13 +14668,13 @@ button:focus-visible {
   font-weight: 700;
   letter-spacing: 0;
   transition:
-    max-height 600ms ease,
-    margin-bottom 600ms ease,
-    opacity 400ms ease;
+    max-height 600ms cubic-bezier(0.4, 0, 0.2, 1),
+    margin-bottom 600ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 400ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.detail-trailer-autoplay.detail-trailer-ready .series-detail-title,
-.detail-trailer-manual.detail-trailer-ready .series-detail-title {
+.detail-trailer-autoplay .series-detail-title,
+.detail-trailer-manual .series-detail-title {
   max-height: 0;
   margin-bottom: 0;
   opacity: 0;
@@ -14661,12 +14689,12 @@ button:focus-visible {
   color: rgba(255, 255, 255, 0.72);
   opacity: 0;
   transition:
-    max-height 600ms ease,
-    margin-bottom 600ms ease,
-    opacity 450ms ease;
+    max-height 600ms cubic-bezier(0.4, 0, 0.2, 1),
+    margin-bottom 600ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 600ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.detail-trailer-autoplay.detail-trailer-ready .detail-trailer-hint {
+.detail-trailer-autoplay .detail-trailer-hint {
   max-height: 56px;
   margin-bottom: 8px;
   opacity: 1;
@@ -14677,21 +14705,18 @@ button:focus-visible {
   align-items: center;
   gap: clamp(14px, 1vw, 20px);
   margin-bottom: clamp(18px, 1.4vw, 26px);
-  transition:
-    opacity 400ms ease,
-    transform 400ms ease;
+  transition: opacity 400ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.detail-trailer-active.detail-trailer-ready .detail-hero-body {
+.detail-trailer-active .detail-hero-body {
   max-height: 0;
   opacity: 0;
-  transform: translateY(8px);
+  transform: translateY(0);
   visibility: hidden;
   pointer-events: none;
   transition:
-    max-height 600ms ease,
-    opacity 400ms ease,
-    transform 400ms ease,
+    max-height 600ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 400ms cubic-bezier(0.4, 0, 0.2, 1),
     visibility 0s linear 600ms;
 }
 
@@ -16582,13 +16607,14 @@ button:focus-visible {
   top: 0;
   right: 0;
   width: 520px;
-  max-width: calc(100vw - 32px);
+  max-width: calc(100% - 32px);
   height: 100%;
   padding: 24px;
   border: 0;
   border-radius: 16px 0 0 16px;
   background: var(--player-background-elevated);
   box-sizing: border-box;
+  pointer-events: auto;
   transform: translateX(0);
   opacity: 1;
   transition:
@@ -19505,7 +19531,7 @@ html.no-css-grid .cast-detail-meta {
   margin-bottom: 40px;
 }
 
-.detail-trailer-autoplay.detail-trailer-ready .series-detail-logo {
+.detail-trailer-autoplay .series-detail-logo {
   max-width: 25vw;
   max-height: 120px;
   margin-bottom: 48px;
@@ -19520,7 +19546,7 @@ html.no-css-grid .cast-detail-meta {
   font-size: var(--detail-label-size);
 }
 
-.detail-trailer-autoplay.detail-trailer-ready .detail-trailer-hint {
+.detail-trailer-autoplay .detail-trailer-hint {
   max-height: 48px;
   margin-bottom: 16px;
 }

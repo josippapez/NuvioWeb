@@ -833,7 +833,7 @@ function resolveTrailerTrustedProxyOrigin() {
   return "";
 }
 
-function buildDirectYoutubeEmbedUrl(cleanId = "", { muted = true, loop = true } = {}) {
+function buildDirectYoutubeEmbedUrl(cleanId = "", { muted = false, loop = true } = {}) {
   const videoId = String(cleanId || "").trim();
   if (!videoId || !Environment.isBrowser()) {
     return "";
@@ -859,13 +859,13 @@ function buildDirectYoutubeEmbedUrl(cleanId = "", { muted = true, loop = true } 
   return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
 }
 
-function buildYoutubeEmbedUrl(ytId = "", { muted = true } = {}) {
+function buildYoutubeEmbedUrl(ytId = "", { muted = false } = {}) {
   const cleanId = String(ytId || "").trim();
   if (!cleanId) {
     return "";
   }
   if (shouldUseDirectYoutubeEmbedOnTv()) {
-    return buildDirectYoutubeEmbedUrl(cleanId, { muted: true });
+    return buildDirectYoutubeEmbedUrl(cleanId, { muted });
   }
   const proxyBase = getYoutubeProxyBaseUrl();
   if (proxyBase) {
@@ -906,7 +906,7 @@ function buildYoutubeEmbedUrl(ytId = "", { muted = true } = {}) {
   return `https://www.youtube-nocookie.com/embed/${cleanId}?${params.toString()}`;
 }
 
-function buildInlineYoutubePlayerUrl(ytId = "", { muted = true, loop = false } = {}) {
+function buildInlineYoutubePlayerUrl(ytId = "", { muted = false, loop = false } = {}) {
   const cleanId = String(ytId || "").trim();
   if (!cleanId) {
     return "";
@@ -2593,6 +2593,7 @@ export const MetaDetailsScreen = {
       <div class="series-detail-shell${this.getTrailerShellStateClasses()}">
         <div class="series-detail-backdrop" data-backdrop-url="${escapeAttribute(backdrop || "")}"${backdrop ? ` style="background-image:url('${backdrop.replace(/'/g, "%27")}')"` : ""}></div>
         <div class="detail-trailer-layer"></div>
+        <div class="detail-trailer-loading-spinner" aria-hidden="true"><div class="player-loading-spinner-ring"></div></div>
         <div class="series-detail-vignette"></div>
         <div class="detail-bottom-shadow"></div>
 
@@ -2892,6 +2893,7 @@ export const MetaDetailsScreen = {
       <div class="series-detail-shell movie-detail-shell${this.getTrailerShellStateClasses()}">
         <div class="series-detail-backdrop" data-backdrop-url="${escapeAttribute(backdrop || "")}"${backdrop ? ` style="background-image:url('${backdrop.replace(/'/g, "%27")}')"` : ""}></div>
         <div class="detail-trailer-layer"></div>
+        <div class="detail-trailer-loading-spinner" aria-hidden="true"><div class="player-loading-spinner-ring"></div></div>
         <div class="series-detail-vignette"></div>
         <div class="detail-bottom-shadow"></div>
 
@@ -5580,7 +5582,7 @@ export const MetaDetailsScreen = {
       return;
     }
     this.trailerAutoplayTimer = setTimeout(() => {
-      this.playTrailer({ muted: true, restart: true, initiatedByUser: false });
+      this.playTrailer({ muted: false, restart: true, initiatedByUser: false });
     }, 7000);
   },
 
@@ -6242,7 +6244,9 @@ export const MetaDetailsScreen = {
     preserveSource = false
   } = {}) {
     const requestedFocusRestore = initiatedByUser ? this.captureDetailFocus() : null;
-    if (!preserveSource && (!this.trailerSource || this.trailerSource.kind === "youtube")) {
+    // Android TV starts the already-resolved hero trailer immediately when the
+    // button is pressed. Only resolve here when no prepared source exists.
+    if (!preserveSource && !this.trailerSource) {
       const preferredSource = await this.resolvePreferredTrailerSource(this.meta);
       if (preferredSource) {
         this.trailerSource = preferredSource;

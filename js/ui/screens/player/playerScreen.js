@@ -12664,7 +12664,7 @@ export const PlayerScreen = {
     }
     return Number(season) === 0
       ? t("episodes_specials", {}, "Specials")
-      : `${t("episodes_season", {}, "Season")} ${Number(season)}`;
+      : t("episodes_season", [Number(season)], "Season %1$d");
   },
 
   syncEpisodePanelSeasonToIndex() {
@@ -12991,16 +12991,60 @@ export const PlayerScreen = {
   },
 
   scrollEpisodePanelIntoView() {
-    const panel = this.container?.querySelector("#episodeSidePanel");
+    const panel = this.uiRefs?.root?.querySelector("#episodeSidePanel");
     if (!panel || !this.episodePanelVisible) {
       return;
     }
-    const selected = panel.querySelector(".player-episode-item.focused") || panel.querySelector(".player-episode-item.selected");
-    selected?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+
+    const scrollVerticallyWithin = (container, target, padding = 12) => {
+      if (!container || !target) {
+        return;
+      }
+      const containerRect = container.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      if (targetRect.top < containerRect.top + padding) {
+        container.scrollTop -= (containerRect.top + padding) - targetRect.top;
+      } else if (targetRect.bottom > containerRect.bottom - padding) {
+        container.scrollTop += targetRect.bottom - (containerRect.bottom - padding);
+      }
+    };
+
+    const scrollHorizontallyWithin = (container, target, padding = 8) => {
+      if (!container || !target) {
+        return;
+      }
+      const containerRect = container.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      if (targetRect.left < containerRect.left + padding) {
+        container.scrollLeft -= (containerRect.left + padding) - targetRect.left;
+      } else if (targetRect.right > containerRect.right - padding) {
+        container.scrollLeft += targetRect.right - (containerRect.right - padding);
+      }
+    };
+
+    const selected =
+      panel.querySelector(".player-episode-item.focused")
+      || panel.querySelector(".player-episode-item.selected");
+    scrollVerticallyWithin(panel.querySelector(".player-episode-list"), selected);
+
     const focusedSeason = panel.querySelector(".player-episode-season-tab.focused");
-    focusedSeason?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    scrollHorizontallyWithin(
+      panel.querySelector(".player-episode-season-tabs"),
+      focusedSeason
+    );
+
     const focusedStream = panel.querySelector(".player-episode-stream-card.focused");
-    focusedStream?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    scrollVerticallyWithin(
+      panel.querySelector(".player-episode-stream-list"),
+      focusedStream
+    );
+
+    const focusedFilter = panel.querySelector(".player-episode-stream-filter.focused");
+    scrollHorizontallyWithin(
+      panel.querySelector(".player-episode-stream-filters"),
+      focusedFilter
+    );
+
     try {
       const focused = panel.querySelector(".focused");
       focused?.focus?.({ preventScroll: true });
@@ -13073,7 +13117,7 @@ export const PlayerScreen = {
           !this.episodePanelStreamsLoading &&
           !this.episodePanelStreamsError &&
           !streams.length
-            ? `<div class="player-episode-stream-empty">${escapeHtml(t("sources_no_streams", {}, "No streams found"))}</div>`
+            ? `<div class="player-episode-stream-empty">${escapeHtml(t("episodes_panel_no_streams", {}, "No streams found"))}</div>`
             : streams
                 .map((stream, index) => {
                   const focused = focus.zone === "streams" && focus.index === index;
@@ -13108,7 +13152,11 @@ export const PlayerScreen = {
       clearTimeout(this.episodePanelExitTimer);
       this.episodePanelExitTimer = null;
     }
-    const existingPanel = this.container.querySelector("#episodeSidePanel");
+    const panelHost = this.uiRefs?.root;
+    if (!panelHost) {
+      return;
+    }
+    const existingPanel = panelHost.querySelector("#episodeSidePanel");
     const shouldAnimateEntry =
       !existingPanel || existingPanel.classList.contains("is-exiting");
     existingPanel?.remove();
@@ -13183,15 +13231,19 @@ export const PlayerScreen = {
              <div class="player-episode-list">${cards}</div>`
       }
     `;
-    this.container.appendChild(panel);
+    panelHost.appendChild(panel);
     if (shouldAnimateEntry) {
       panel.classList.add("is-entering");
-      const finishEntry = () => panel.classList.remove("is-entering");
+      const finishEntry = () => {
+        panel.classList.remove("is-entering");
+        this.scrollEpisodePanelIntoView();
+      };
       if (typeof requestAnimationFrame === "function") {
         requestAnimationFrame(() => requestAnimationFrame(finishEntry));
       } else {
         setTimeout(finishEntry, 32);
       }
+      return;
     }
     this.scrollEpisodePanelIntoView();
   },
@@ -13199,7 +13251,7 @@ export const PlayerScreen = {
   hideEpisodePanel() {
     this.episodePanelVisible = false;
     this.episodePanelStreamLoadToken = Number(this.episodePanelStreamLoadToken || 0) + 1;
-    const panel = this.container?.querySelector("#episodeSidePanel");
+    const panel = this.uiRefs?.root?.querySelector("#episodeSidePanel");
     panel?.classList.add("is-exiting");
     if (this.episodePanelExitTimer) {
       clearTimeout(this.episodePanelExitTimer);
