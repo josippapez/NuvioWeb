@@ -1264,7 +1264,12 @@ export const MetaDetailsScreen = {
           loading: true,
           controllable: true
         };
+        this.postTrailerProxyCommand("setMuted", {
+          muted: Boolean(this.trailerMuted)
+        });
+        this.postTrailerProxyCommand("play");
         this.postTrailerProxyCommand("getState");
+        this.startTrailerFirstFramePolling();
         if (this.trailerPlaybackMode === "manual") {
           this.updateTrailerOverlay();
         }
@@ -1279,6 +1284,14 @@ export const MetaDetailsScreen = {
           (!endedId || !activeId || endedId === activeId)
         ) {
           this.stopTrailerPlayback();
+        }
+        return;
+      }
+      if (data.type === "firstFrame") {
+        const frameVideoId = String(data.videoId || "").trim();
+        const activeId = String(this.trailerSource?.ytId || "").trim();
+        if (!frameVideoId || !activeId || frameVideoId === activeId) {
+          this.markTrailerVisualReady();
         }
         return;
       }
@@ -1298,12 +1311,10 @@ export const MetaDetailsScreen = {
         }
         this.trailerProxyState = nextState;
         this.trailerYoutubeFallbackActive = nextState.controllable === false;
-        if (
-          !nextState.loading &&
-          (!nextState.paused ||
-            nextState.playerState === 1 ||
-            Number(nextState.currentTime || 0) > 0)
-        ) {
+        if (this.trailerYoutubeFallbackActive) {
+          this.scheduleTrailerFallbackReveal(activeVideoId);
+        }
+        if (!nextState.loading && Number(nextState.currentTime || 0) > 0) {
           this.markTrailerVisualReady();
         }
         if (nextState.ended) {
@@ -1325,16 +1336,20 @@ export const MetaDetailsScreen = {
     }
     const src = String(this.trailerUiRefs?.frame?.src || this.trailerSource?.embedUrl || "");
     const targetOrigin = resolveTrailerPostMessageTargetOrigin(src);
-    frameWindow.postMessage(
-      {
-        source: "nuvio-detail-trailer",
-        type: "command",
-        command: String(command || ""),
-        payload: payload && typeof payload === "object" ? payload : {}
-      },
-      targetOrigin
-    );
-    return true;
+    try {
+      frameWindow.postMessage(
+        {
+          source: "nuvio-detail-trailer",
+          type: "command",
+          command: String(command || ""),
+          payload: payload && typeof payload === "object" ? payload : {}
+        },
+        targetOrigin
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
   },
 
   async mount(params = {}, navigationContext = {}) {
@@ -1391,6 +1406,8 @@ export const MetaDetailsScreen = {
     this.trailerProgressTimer = null;
     this.trailerControlsTimer = null;
     this.trailerProxyLoadingTimer = null;
+    this.trailerFirstFramePollTimer = null;
+    this.trailerFallbackRevealTimer = null;
     this.trailerControlsVisible = true;
     this.trailerProxyState = null;
     this.trailerProxyMessageHandler = null;
@@ -2205,7 +2222,9 @@ export const MetaDetailsScreen = {
           : meta.description,
         background: settings.useArtwork ? enrichment.backdrop || meta.background : meta.background,
         poster: settings.useArtwork ? enrichment.poster || meta.poster : meta.poster,
-        logo: settings.useArtwork ? enrichment.logo || meta.logo : meta.logo,
+        // TMDB enrichment deliberately returns no logo when only unrelated
+        // languages are available; show the localized text title in that case.
+        logo: settings.useArtwork ? enrichment.logo : meta.logo,
         genres: settings.useDetails ? mergeGenreLists(meta.genres, enrichment.genres) : meta.genres,
         releaseInfo: settings.useDetails
           ? meta.releaseInfo || enrichment.releaseInfo
@@ -5157,22 +5176,8 @@ export const MetaDetailsScreen = {
         return;
       }
       const target = event?.target?.closest?.("[data-trailer-control]");
-      if (
-        !target ||
-        !this.isTrailerPlaying ||
-        this.trailerPlaybackMode !== "manual"
-      ) {
-        return;
-      }
-      event?.preventDefault?.();
-      this.restartTrailerControlsTimer();
-      const control = String(target.dataset.trailerControl || "");
-      if (control === "playPause") {
-        this.toggleActiveTrailerPlayback();
-        return;
-      }
-      if (control === "mute") {
-        this.setTrailerMutedState(!this.trailerMuted);
+      if (this.activateTrailerControl(target)) {
+        event?.preventDefault?.();
       }
     };
     this.container.addEventListener("click", this.detailClickHandler, true);
@@ -5262,9 +5267,13 @@ export const MetaDetailsScreen = {
     if (!this.container) {
       return null;
     }
-    const current = this.container.querySelector(".focusable.focused");
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const target = current || (active && this.container.contains(active) ? active : null);
+    const activeTarget =
+      active && this.container.contains(active) && active.classList.contains("focusable")
+        ? active
+        : null;
+    const current = this.container.querySelector(".focusable.focused");
+    const target = activeTarget || current || (active && this.container.contains(active) ? active : null);
     if (!(target instanceof HTMLElement) || !target.closest(".series-detail-content")) {
       return null;
     }
@@ -5599,6 +5608,58 @@ export const MetaDetailsScreen = {
     }
   },
 
+  stopTrailerFirstFramePolling() {
+    if (this.trailerFirstFramePollTimer) {
+      clearInterval(this.trailerFirstFramePollTimer);
+      this.trailerFirstFramePollTimer = null;
+    }
+  },
+
+  stopTrailerFallbackRevealTimer() {
+    if (this.trailerFallbackRevealTimer) {
+      clearTimeout(this.trailerFallbackRevealTimer);
+      this.trailerFallbackRevealTimer = null;
+    }
+  },
+
+  scheduleTrailerFallbackReveal(ytId = "") {
+    this.stopTrailerFallbackRevealTimer();
+    const expectedId = String(ytId || "").trim();
+    this.trailerFallbackRevealTimer = setTimeout(() => {
+      this.trailerFallbackRevealTimer = null;
+      if (
+        this.isTrailerPlaying &&
+        this.trailerSource?.kind === "youtube" &&
+        (!expectedId ||
+          String(this.trailerSource?.ytId || "").trim() === expectedId)
+      ) {
+        this.markTrailerVisualReady();
+      }
+    }, 450);
+  },
+
+  startTrailerFirstFramePolling() {
+    this.stopTrailerFirstFramePolling();
+    if (
+      !this.isTrailerPlaying ||
+      this.trailerSource?.kind !== "youtube" ||
+      this.trailerVisualReady
+    ) {
+      return;
+    }
+    this.trailerFirstFramePollTimer = setInterval(() => {
+      if (
+        !this.isTrailerPlaying ||
+        this.trailerSource?.kind !== "youtube" ||
+        this.trailerVisualReady
+      ) {
+        this.stopTrailerFirstFramePolling();
+        return;
+      }
+      this.postTrailerProxyCommand("getState");
+    }, 120);
+  },
+
   startTrailerProxyLoadingTimer(ytId = "") {
     this.stopTrailerProxyLoadingTimer();
     const expectedId = String(ytId || "").trim();
@@ -5660,6 +5721,27 @@ export const MetaDetailsScreen = {
     this.trailerControlsTimer = setTimeout(() => {
       this.setTrailerControlsVisible(false);
     }, 3200);
+  },
+
+  activateTrailerControl(target) {
+    if (
+      !target ||
+      !this.isTrailerPlaying ||
+      this.trailerPlaybackMode !== "manual"
+    ) {
+      return false;
+    }
+    this.restartTrailerControlsTimer();
+    const control = String(target.dataset.trailerControl || "");
+    if (control === "playPause") {
+      this.toggleActiveTrailerPlayback();
+      return true;
+    }
+    if (control === "mute") {
+      this.setTrailerMutedState(!this.trailerMuted);
+      return true;
+    }
+    return false;
   },
 
   startTrailerProgressTimer() {
@@ -5833,8 +5915,18 @@ export const MetaDetailsScreen = {
     this.detachTrailerMediaListeners();
     const sync = () => this.updateTrailerOverlay();
     const markReady = () => {
-      this.markTrailerVisualReady();
-      this.updateTrailerOverlay();
+      const reveal = () => {
+        if (!this.isTrailerPlaying || video.paused || !video.isConnected) {
+          return;
+        }
+        this.markTrailerVisualReady();
+        this.updateTrailerOverlay();
+      };
+      if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(() => requestAnimationFrame(reveal));
+      } else {
+        setTimeout(reveal, 32);
+      }
     };
     const handleEnded = () => {
       if (this.isTrailerPlaying) {
@@ -5878,6 +5970,8 @@ export const MetaDetailsScreen = {
     if (!this.isTrailerPlaying || this.trailerVisualReady) {
       return;
     }
+    this.stopTrailerFirstFramePolling();
+    this.stopTrailerFallbackRevealTimer();
     this.trailerVisualReady = true;
     this.container
       ?.querySelector(".series-detail-shell")
@@ -5886,6 +5980,8 @@ export const MetaDetailsScreen = {
 
   destroyYoutubeTrailerPlayer() {
     this.stopTrailerProxyLoadingTimer();
+    this.stopTrailerFirstFramePolling();
+    this.stopTrailerFallbackRevealTimer();
     this.trailerProxyState = null;
     this.trailerYoutubeFallbackActive = false;
   },
@@ -5912,18 +6008,6 @@ export const MetaDetailsScreen = {
     this.trailerYoutubeFallbackActive = false;
     this.startTrailerProxyLoadingTimer(ytId);
     this.updateTrailerOverlay();
-    setTimeout(() => {
-      if (
-        !this.isTrailerPlaying ||
-        this.trailerSource?.kind !== "youtube" ||
-        String(this.trailerSource?.ytId || "").trim() !== ytId
-      ) {
-        return;
-      }
-      this.postTrailerProxyCommand("setMuted", { muted: Boolean(this.trailerMuted) });
-      this.postTrailerProxyCommand("play");
-      this.postTrailerProxyCommand("getState");
-    }, 180);
   },
 
   toggleActiveTrailerPlayback() {
@@ -6075,11 +6159,11 @@ export const MetaDetailsScreen = {
           </div>
           <div class="detail-trailer-controls-row">
             <div class="detail-trailer-buttons">
-              <button class="player-control-btn detail-trailer-control-btn is-primary" type="button" data-trailer-control="playPause" aria-label="${escapeAttribute(t("detail.trailerPause", {}, "Pause"))}">
+              <button class="player-control-btn detail-trailer-control-btn focusable is-primary" type="button" data-trailer-control="playPause" aria-label="${escapeAttribute(t("detail.trailerPause", {}, "Pause"))}">
                 <img class="player-control-icon" data-trailer-play-icon src="assets/icons/ic_player_pause.svg" alt="" />
                 <span class="detail-trailer-control-text" data-trailer-play-label>${escapeHtml(t("detail.trailerPause", {}, "Pause"))}</span>
               </button>
-              <button class="player-control-btn detail-trailer-control-btn" type="button" data-trailer-control="mute" aria-label="${escapeAttribute(t("detail.trailerMute", {}, "Mute"))}">
+              <button class="player-control-btn detail-trailer-control-btn focusable" type="button" data-trailer-control="mute" aria-label="${escapeAttribute(t("detail.trailerMute", {}, "Mute"))}">
                 <img class="player-control-icon" data-trailer-mute-icon src="assets/icons/ic_player_audio_outline.svg" alt="" />
                 <span class="detail-trailer-control-text" data-trailer-mute-label>${escapeHtml(t("detail.trailerMute", {}, "Mute"))}</span>
               </button>
@@ -6925,8 +7009,13 @@ export const MetaDetailsScreen = {
     }
   },
 
-  getMoreLikeRailKey() {
-    return isSeriesDetailMeta(this.meta, this.episodes) ? "morelike:series" : "morelike:movie";
+  getActivePreviewRailKey() {
+    const kind = isSeriesDetailMeta(this.meta, this.episodes) ? "series" : "movie";
+    const activeTab =
+      kind === "series"
+        ? String(this.seriesInsightTab || "")
+        : String(this.movieInsightTab || "");
+    return `${activeTab === "collection" ? "collection" : "morelike"}:${kind}`;
   },
 
   focusInList(list, targetIndex, options = {}) {
@@ -7258,7 +7347,7 @@ export const MetaDetailsScreen = {
       this.container.querySelectorAll(".detail-comments-track .detail-comment-card.focusable")
     );
     const moreLikeRememberedIndex = this.getRememberedRailIndex(
-      this.getMoreLikeRailKey(),
+      this.getActivePreviewRailKey(),
       moreLikeCards
     );
     const companyTracks = Array.from(this.container.querySelectorAll(".detail-company-track"));
@@ -7291,7 +7380,7 @@ export const MetaDetailsScreen = {
       ) {
         return this.focusInList(
           moreLikeCards,
-          this.getRememberedRailIndex(this.getMoreLikeRailKey(), moreLikeCards)
+          this.getRememberedRailIndex(this.getActivePreviewRailKey(), moreLikeCards)
         );
       }
       if (castCards.length)
@@ -7746,7 +7835,7 @@ export const MetaDetailsScreen = {
       this.container.querySelectorAll(".detail-comments-track .detail-comment-card.focusable")
     );
     const moreLikeRememberedIndex = this.getRememberedRailIndex(
-      this.getMoreLikeRailKey(),
+      this.getActivePreviewRailKey(),
       moreLikeCards
     );
     const companyTracks = Array.from(this.container.querySelectorAll(".detail-company-track"));
@@ -7773,7 +7862,7 @@ export const MetaDetailsScreen = {
       ) {
         return this.focusInList(
           moreLikeCards,
-          this.getRememberedRailIndex(this.getMoreLikeRailKey(), moreLikeCards)
+          this.getRememberedRailIndex(this.getActivePreviewRailKey(), moreLikeCards)
         );
       }
       if (cast.length) return this.focusInList(cast, Math.min(index, cast.length - 1));
@@ -8375,6 +8464,51 @@ export const MetaDetailsScreen = {
     if (action === "openMoreLikeDetail") {
       this.openMoreLikeDetailFromNode(current);
     }
+  },
+
+  onPointerMove() {
+    if (this.isTrailerPlaying && this.trailerPlaybackMode === "manual") {
+      this.restartTrailerControlsTimer();
+    }
+  },
+
+  onPointerFocus(target) {
+    if (target?.closest?.("[data-trailer-control]")) {
+      this.restartTrailerControlsTimer();
+    }
+  },
+
+  onPointerActivate(target) {
+    const trailerControl = target?.closest?.("[data-trailer-control]");
+    if (this.activateTrailerControl(trailerControl)) {
+      return true;
+    }
+
+    const actionTarget = target?.closest?.("[data-action]");
+    const action = String(actionTarget?.dataset?.action || "");
+    if (action === "toggleTrailer") {
+      this.playTrailer({ muted: false, restart: true, initiatedByUser: true });
+      return true;
+    }
+    if (action === "openSharedTrailer") {
+      const ytId = String(actionTarget.dataset.trailerYtId || "").trim();
+      if (!ytId) {
+        return false;
+      }
+      this.trailerSource = {
+        kind: "youtube",
+        ytId,
+        embedUrl: buildYoutubeEmbedUrl(ytId, { muted: false })
+      };
+      this.playTrailer({
+        muted: false,
+        restart: true,
+        initiatedByUser: true,
+        preserveSource: true
+      });
+      return true;
+    }
+    return false;
   },
 
   async onKeyUp(event) {

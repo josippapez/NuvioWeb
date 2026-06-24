@@ -20,6 +20,68 @@ function toImageUrl(path) {
   return `${IMAGE_BASE_URL}${path}`;
 }
 
+function normalizeTmdbArtworkLanguage(language = "") {
+  const normalized = String(language || "en-US")
+    .trim()
+    .replace(/_/g, "-");
+  const [rawLanguage = "en", rawRegion = ""] = normalized.split("-", 2);
+  const languageCode = rawLanguage.toLowerCase() || "en";
+  const regionCode =
+    rawRegion.length === 2
+      ? rawRegion.toUpperCase()
+      : languageCode === "pt"
+        ? "PT"
+        : languageCode === "es"
+          ? "ES"
+          : "";
+  return {
+    locale: regionCode ? `${languageCode}-${regionCode}` : languageCode,
+    languageCode,
+    regionCode
+  };
+}
+
+function buildTmdbImageLanguageFilter(language = "") {
+  const { locale, languageCode } = normalizeTmdbArtworkLanguage(language);
+  return [...new Set([languageCode, locale, "en", "null"])].join(",");
+}
+
+function selectBestLocalizedLogoPath(logos = [], language = "") {
+  const { languageCode, regionCode } = normalizeTmdbArtworkLanguage(language);
+  const ranked = (Array.isArray(logos) ? logos : [])
+    .map((logo, index) => {
+      const logoLanguage = String(logo?.iso_639_1 || "").toLowerCase();
+      const logoRegion = String(logo?.iso_3166_1 || "").toUpperCase();
+      let priority = -1;
+      if (logoLanguage === languageCode && regionCode && logoRegion === regionCode) {
+        priority = 5;
+      } else if (logoLanguage === languageCode && !logoRegion) {
+        priority = 4;
+      } else if (logoLanguage === languageCode) {
+        priority = 3;
+      } else if (logoLanguage === "en") {
+        priority = 2;
+      } else if (!logoLanguage) {
+        priority = 1;
+      }
+      return {
+        logo,
+        index,
+        priority,
+        voteAverage: Number(logo?.vote_average || 0)
+      };
+    })
+    // Never select artwork explicitly tagged with an unrelated language.
+    .filter((entry) => entry.priority >= 0 && entry.logo?.file_path)
+    .sort(
+      (left, right) =>
+        right.priority - left.priority ||
+        right.voteAverage - left.voteAverage ||
+        left.index - right.index
+    );
+  return ranked[0]?.logo?.file_path || null;
+}
+
 function normalizeTmdbTrailerLanguage(language = "") {
   const normalized = String(language || "")
     .trim()
@@ -134,7 +196,8 @@ export const TmdbMetadataService = {
 
     const type = resolveType(contentType);
     const lang = language || settings.language || "en-US";
-    const params = `api_key=${encodeURIComponent(apiKey)}&language=${encodeURIComponent(lang)}&append_to_response=images,credits,release_dates,content_ratings,videos,external_ids&include_image_language=${encodeURIComponent(lang)},null`;
+    const imageLanguages = buildTmdbImageLanguageFilter(lang);
+    const params = `api_key=${encodeURIComponent(apiKey)}&language=${encodeURIComponent(lang)}&append_to_response=images,credits,release_dates,content_ratings,videos,external_ids&include_image_language=${encodeURIComponent(imageLanguages)}`;
     const url = `${TMDB_BASE_URL}/${type}/${encodeURIComponent(String(tmdbId))}?${params}`;
 
     const response = await fetch(url);
@@ -143,7 +206,7 @@ export const TmdbMetadataService = {
     }
 
     const data = await response.json();
-    const logoPath = Array.isArray(data?.images?.logos) ? data.images.logos[0]?.file_path : null;
+    const logoPath = selectBestLocalizedLogoPath(data?.images?.logos, lang);
     const releaseYear =
       type === "tv"
         ? String(data.first_air_date || "").slice(0, 4)

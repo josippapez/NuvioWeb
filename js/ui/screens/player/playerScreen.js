@@ -5515,9 +5515,11 @@ export const PlayerScreen = {
       const bestStream = bestStreamCandidate?.url || bestStreamCandidate?.externalUrl || null;
       await PlayerController.flushCurrentProgress({ allowCloudSync: false });
       void PlayerController.pushProgressIfDue?.(true);
-      PlayerController.stop({ flushProgress: false });
-      await this.releaseCurrentEngineFsStream("next-episode", { removeTorrent: true });
-      Router.navigate("player", {
+      this.releaseCurrentEngineFsStreamBestEffort("next-episode", {
+        removeTorrent: true,
+        deferRemoveMs: ENGINEFS_NAVIGATION_CLEANUP_GRACE_MS
+      });
+      await Router.navigate("player", {
         streamUrl: bestStream,
         itemId: this.params?.itemId,
         itemType,
@@ -12898,9 +12900,13 @@ export const PlayerScreen = {
       const bestStreamCandidate = this.selectBestStreamCandidate(streamItems) || streamItems[0];
       const bestStream = bestStreamCandidate?.url || bestStreamCandidate?.externalUrl || null;
       const nextEpisode = this.episodes[this.episodePanelIndex + 1] || null;
-      await PlayerController.flushCurrentProgress({ forceCloudSync: true });
-      await this.releaseCurrentEngineFsStream("episode-change", { removeTorrent: true });
-      Router.navigate("player", {
+      await PlayerController.flushCurrentProgress({ allowCloudSync: false });
+      void PlayerController.pushProgressIfDue?.(true);
+      this.releaseCurrentEngineFsStreamBestEffort("episode-change", {
+        removeTorrent: true,
+        deferRemoveMs: ENGINEFS_NAVIGATION_CLEANUP_GRACE_MS
+      });
+      await Router.navigate("player", {
         streamUrl: bestStream,
         itemId: this.params?.itemId,
         itemType,
@@ -13864,7 +13870,6 @@ export const PlayerScreen = {
       PlayerController.video.removeEventListener("ended", this.endedHandler);
       this.endedHandler = null;
     }
-    PlayerController.stop();
     TraktScrobbleService.cancel();
     this.unbindPlayerExitCleanup();
     this.releaseCurrentEngineFsStreamBestEffort("player-cleanup", {
@@ -13945,6 +13950,7 @@ export const PlayerScreen = {
     this.clearMediaSessionHandlers();
 
     this.releaseStartupAudioGate({ resume: false });
+    PlayerController.stop();
 
     if (this.container) {
       this.container.style.display = "none";

@@ -39,15 +39,17 @@ function toRgbChannels(hex, fallback = "255 255 255") {
  * @returns {string}
  */
 export function buildLegacyThemeCss(colorMap) {
-  const { bg, bgElevated, cardBg, secondary, onSecondary, focusColor, focusBg, text } = colorMap;
+  const { bg, bgElevated, cardBg, secondary, onSecondary, focusColor, focusBg, text, border } =
+    colorMap;
 
   return [
     // 1. Base document surfaces
     `html, body { background: ${bg}; color: ${text}; }`,
 
     // 2. Full-screen shells (AMOLED: bg → true black)
-    `.home-shell, .home-sidebar, .profile-screen, .search-screen-shell,` +
-      ` .discover-shell, .library-shell { background: ${bg}; }`,
+    `.home-shell, .home-sidebar, .home-main, .profile-screen, .search-screen-shell,` +
+      ` .discover-shell, .library-shell, .no-css-vars .home-shell,` +
+      ` .no-css-vars .home-sidebar, .no-css-vars .home-main { background: ${bg}; }`,
 
     // 3. Elevated surfaces (cards, dialogs, panels)
     `.account-info, .sync-card, .status-card, .profile-editor-panel,` +
@@ -57,13 +59,29 @@ export function buildLegacyThemeCss(colorMap) {
     `.card, .account-settings-card, .search-input-field,` +
       ` .library-action-button { background: ${cardBg}; }`,
 
-    // 5. Accent-fill surfaces (secondary color)
+    // 5. Sidebar surfaces must use the same palette as the route background.
+    `.modern-sidebar-panel, .modern-sidebar-pill-chip,` +
+      ` .modern-sidebar-shell.blur-enabled .modern-sidebar-panel,` +
+      ` .modern-sidebar-shell.blur-enabled .modern-sidebar-pill-chip,` +
+      ` .no-backdrop-filter .modern-sidebar-shell.blur-enabled .modern-sidebar-panel,` +
+      ` .no-backdrop-filter .modern-sidebar-shell.blur-enabled .modern-sidebar-pill-chip {` +
+      ` background: ${bgElevated}; border-color: ${border}; }`,
+
+    // 6. Accent-fill surfaces (secondary color)
     `.profile-overlay-button-primary,` +
       ` .home-sidebar.content-expanded .home-nav-item.selected,` +
+      ` .modern-sidebar-nav-item.selected,` +
+      ` .modern-sidebar-nav-item.selected.focused,` +
       ` .library-picker-option.focused,` +
       ` .library-watched-badge { background: ${secondary}; color: ${onSecondary}; }`,
 
-    // 6. Focus rings — structures copied verbatim from components.css,
+    `.modern-sidebar-nav-icon-circle, .modern-sidebar-pill-icon-wrap {` +
+      ` background: ${focusBg}; }`,
+    `.modern-sidebar-nav-item.selected .modern-sidebar-nav-icon-circle,` +
+      ` .modern-sidebar-nav-item.selected.focused .modern-sidebar-nav-icon-circle {` +
+      ` background: ${secondary}; color: ${onSecondary}; }`,
+
+    // 7. Focus rings — structures copied verbatim from components.css,
     //    only the color token values are substituted.
 
     // .auth-simple-card.focused / .account-settings-card.focused

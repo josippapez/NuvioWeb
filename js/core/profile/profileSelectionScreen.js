@@ -6,7 +6,6 @@ import { StartupSyncService } from "../../core/profile/startupSyncService.js";
 import { CollectionSyncService } from "../../core/profile/collectionSyncService.js";
 import { HomeCatalogSettingsSyncService } from "../../core/profile/homeCatalogSettingsSyncService.js";
 import { ScreenUtils } from "../../ui/navigation/screen.js";
-import { Platform } from "../../platform/index.js";
 import { AvatarRepository } from "../../data/remote/supabase/avatarRepository.js";
 import { ThemeManager } from "../../ui/theme/themeManager.js";
 import { I18n } from "../../i18n/index.js";
@@ -56,12 +55,23 @@ function keyEventToDigit(event) {
   if (/^\d$/.test(key)) {
     return key;
   }
-  const code = Number(event?.keyCode || event?.which || 0);
-  if (code >= 48 && code <= 57) {
-    return String(code - 48);
+  const keyName = String(event?.keyName || "");
+  if (/^\d$/.test(keyName)) {
+    return keyName;
   }
-  if (code >= 96 && code <= 105) {
-    return String(code - 96);
+  const codeName = String(event?.code || "");
+  const codeNameMatch = codeName.match(/^(?:Digit|Numpad)(\d)$/);
+  if (codeNameMatch) {
+    return codeNameMatch[1];
+  }
+  const codes = [Number(event?.keyCode || event?.which || 0), Number(event?.originalKeyCode || 0)];
+  const standardCode = codes.find((code) => code >= 48 && code <= 57);
+  if (standardCode != null) {
+    return String(standardCode - 48);
+  }
+  const numpadCode = codes.find((code) => code >= 96 && code <= 105);
+  if (numpadCode != null) {
+    return String(numpadCode - 96);
   }
   return null;
 }
@@ -652,6 +662,35 @@ export const ProfileSelectionScreen = {
     }).join("");
   },
 
+  renderPinKeypad() {
+    const keys = [
+      { value: "1", label: "1" },
+      { value: "2", label: "2" },
+      { value: "3", label: "3" },
+      { value: "4", label: "4" },
+      { value: "5", label: "5" },
+      { value: "6", label: "6" },
+      { value: "7", label: "7" },
+      { value: "8", label: "8" },
+      { value: "9", label: "9" },
+      { value: "delete", label: "⌫", ariaLabel: "Delete digit" },
+      { value: "0", label: "0" }
+    ];
+    return keys
+      .map(
+        ({ value, label, ariaLabel = label }) => `
+          <button
+            class="profile-pin-key focusable"
+            type="button"
+            data-pin-key="${escapeHtml(value)}"
+            data-focus-key="pin:${escapeHtml(value)}"
+            aria-label="${escapeHtml(ariaLabel)}"
+            tabindex="0">${escapeHtml(label)}</button>
+        `
+      )
+      .join("");
+  },
+
   renderPinOverlay() {
     const state = this.getRenderedPinOverlayState();
     const profile = this.getPinOverlayProfile();
@@ -696,6 +735,7 @@ export const ProfileSelectionScreen = {
             <div class="profile-pin-heading">${escapeHtml(heading)}</div>
             <div class="profile-pin-box-row" data-role="pin-box-row">${this.renderPinBoxes()}</div>
             <div class="profile-pin-support${this.pinOverlayError ? " is-error" : ""}">${escapeHtml(support)}</div>
+            <div class="profile-pin-keypad" aria-label="PIN keypad">${this.renderPinKeypad()}</div>
             ${isSingleEntryMode ? `<div class="profile-pin-forgot">${escapeHtml(PROFILE_PIN_TEXT.forgot)}</div>` : ""}
             <div class="profile-pin-back-hint">${escapeHtml(PROFILE_PIN_TEXT.back)}</div>
           </div>
@@ -745,6 +785,14 @@ export const ProfileSelectionScreen = {
       });
     }
 
+    Array.from(this.container.querySelectorAll(".profile-pin-key")).forEach((node) => {
+      node.addEventListener("focus", () => this.handleFocusableFocus(node));
+      node.addEventListener("click", async (event) => {
+        event.stopPropagation();
+        await this.activatePinKey(node.dataset.pinKey);
+      });
+    });
+
     const nameInput = this.container.querySelector("[data-role='editor-name-input']");
     if (nameInput) {
       nameInput.addEventListener("input", (event) => {
@@ -779,7 +827,7 @@ export const ProfileSelectionScreen = {
   handleFocusableFocus(node) {
     Array.from(
       this.container.querySelectorAll(
-        ".profile-focusable.focused, .profile-overlay-focusable.focused, .profile-pin-overlay.focused"
+        ".profile-focusable.focused, .profile-overlay-focusable.focused, .profile-pin-overlay.focused, .profile-pin-key.focused"
       )
     ).forEach((entry) => {
       if (entry !== node) {
@@ -833,7 +881,7 @@ export const ProfileSelectionScreen = {
     this.pendingFocusKey = "";
     if (!target) {
       const fallback = this.container.querySelector(
-        ".profile-pin-overlay, .profile-card, .profile-overlay-focusable, .profile-dialog-button"
+        ".profile-pin-key, .profile-pin-overlay, .profile-card, .profile-overlay-focusable, .profile-dialog-button"
       );
       if (!fallback) {
         return;
@@ -848,7 +896,7 @@ export const ProfileSelectionScreen = {
 
   getDefaultFocusKey() {
     if (this.pinOverlayState) {
-      return "pin:root";
+      return "pin:1";
     }
     if (this.editorState) {
       return "editor:name";
@@ -1431,7 +1479,7 @@ export const ProfileSelectionScreen = {
     this.pinEntryStage = "create";
     this.pinValue = "";
     this.pinDraftValue = "";
-    this.pendingFocusKey = "pin:root";
+    this.pendingFocusKey = "pin:1";
     this.render();
     this.pinTransitionTimer = setTimeout(() => {
       this.pinTransitionTimer = null;
@@ -1631,6 +1679,30 @@ export const ProfileSelectionScreen = {
     this.triggerPinShake();
   },
 
+  async activatePinKey(value) {
+    if (this.isPinOperationInProgress) {
+      return;
+    }
+    if (value === "delete") {
+      if (this.pinValue) {
+        this.pinValue = this.pinValue.slice(0, -1);
+        this.pinOverlayError = "";
+        this.pendingFocusKey = "pin:delete";
+        this.render();
+      }
+      return;
+    }
+    const digit = String(value || "");
+    if (!/^\d$/.test(digit) || this.pinValue.length >= PROFILE_PIN_LENGTH) {
+      return;
+    }
+    this.pinValue += digit;
+    this.pinOverlayError = "";
+    this.pendingFocusKey = `pin:${digit}`;
+    this.render();
+    await this.handleCompletedPinEntry();
+  },
+
   async handlePinOverlayKeyDown(event) {
     const code = Number(event?.keyCode || 0);
     const key = String(event?.key || "");
@@ -1648,8 +1720,21 @@ export const ProfileSelectionScreen = {
       this.closePinOverlay();
       return true;
     }
-    if ([37, 38, 39, 40, 13].includes(code)) {
+    if ([37, 38, 39, 40].includes(code)) {
+      const overlayRoot = this.container?.querySelector("[data-overlay-root='pin']");
+      if (overlayRoot) {
+        ScreenUtils.handleDpadNavigation(event, overlayRoot, ".profile-pin-key");
+      }
+      return true;
+    }
+    if (code === 13) {
       event?.preventDefault?.();
+      const focused =
+        this.container?.querySelector(".profile-pin-key.focused") ||
+        (document.activeElement?.matches?.(".profile-pin-key") ? document.activeElement : null);
+      if (focused) {
+        await this.activatePinKey(focused.dataset.pinKey);
+      }
       return true;
     }
     const digit = keyEventToDigit(event);
@@ -2035,7 +2120,7 @@ export const ProfileSelectionScreen = {
   },
 
   consumeBackRequest() {
-    if (this.pinOverlayState) {
+    if (this.pinOverlayState || this.pinOverlayRenderState) {
       this.closePinOverlay();
       return true;
     }

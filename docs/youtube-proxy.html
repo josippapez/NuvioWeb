@@ -33,6 +33,7 @@
         var readyWatchdog = null;
         var lastStatePayload = "";
         var stateTimer = null;
+        var firstFrameSent = false;
         var pageOrigin = String((location && location.origin) || "").trim();
         var pageOriginIsHttp = /^https?:\/\//i.test(pageOrigin);
         var widgetReferrer = pageOriginIsHttp ? location.href : "https://www.youtube.com";
@@ -127,6 +128,13 @@
 
         function pushState(force) {
           var state = getPlayerStatePayload();
+          if (!firstFrameSent && state.playerState === 1 && state.currentTime > 0) {
+            firstFrameSent = true;
+            postToParent("firstFrame", {
+              videoId: videoId,
+              currentTime: state.currentTime
+            });
+          }
           var serialized = JSON.stringify(state);
           if (!force && serialized === lastStatePayload) {
             return;
@@ -141,7 +149,7 @@
           }
           stateTimer = setInterval(function pushStateTick() {
             pushState(false);
-          }, 1000);
+          }, 250);
         }
 
         function handleCommand(data) {
@@ -249,6 +257,17 @@
             '<iframe id="yt" src="' +
             src +
             '" frameborder="0" allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe>';
+          var fallbackFrame = document.getElementById("yt");
+          if (fallbackFrame) {
+            fallbackFrame.addEventListener("load", function onFallbackLoaded() {
+              setTimeout(function reportFallbackFirstFrame() {
+                if (!firstFrameSent) {
+                  firstFrameSent = true;
+                  postToParent("firstFrame", { videoId: videoId, currentTime: 0 });
+                }
+              }, 250);
+            });
+          }
           postToParent("state", {
             state: {
               currentTime: 0,

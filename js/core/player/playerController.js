@@ -93,6 +93,7 @@ export const PlayerController = {
   avplayFallbackAttempts: new Set(),
   playbackEngineAttempts: new Map(),
   playRequestToken: 0,
+  playbackSessionActive: false,
   nativeMediaId: "",
   nativeMediaIdLookupToken: 0,
   selectedWebOsEmbeddedAudioTrackIndex: -1,
@@ -3380,6 +3381,7 @@ export const PlayerController = {
       return;
     }
 
+    this.playbackSessionActive = true;
     this.applyStartupAudioGateToVideo();
 
     this.currentItemId = itemId;
@@ -3633,6 +3635,14 @@ export const PlayerController = {
     const flushPromise = flushProgress
       ? this.flushCurrentProgress({ forceCloudSync, allowCloudSync })
       : Promise.resolve(false);
+    if (!this.playbackSessionActive) {
+      if (this.progressSaveTimer) {
+        clearInterval(this.progressSaveTimer);
+        this.progressSaveTimer = null;
+      }
+      return flushPromise;
+    }
+    this.playbackSessionActive = false;
     this.setStartupAudioGate(false, { resume: false });
 
     try {

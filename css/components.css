@@ -885,6 +885,42 @@ button:focus-visible {
   color: #ff8e8e;
 }
 
+.profile-pin-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, min(5.21vw, 100px));
+  grid-auto-rows: min(3.65vw, 70px);
+  justify-content: center;
+  gap: min(0.73vw, 14px);
+  margin-top: min(1.67vw, 32px);
+}
+
+.profile-pin-key {
+  border: 2px solid rgb(255 255 255 / 0.28);
+  border-radius: min(0.63vw, 12px);
+  outline: none;
+  background: rgb(255 255 255 / 0.08);
+  color: var(--text-color);
+  font: inherit;
+  font-size: min(1.875vw, 36px);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    transform 120ms ease;
+}
+
+.profile-pin-key:last-child {
+  grid-column: 2;
+}
+
+.profile-pin-key.focused,
+.profile-pin-key:focus {
+  border-color: #fff;
+  background: rgb(255 255 255 / 0.22);
+  transform: scale(1.06);
+}
+
 .profile-pin-forgot,
 .profile-pin-back-hint {
   font-size: min(1.46vw, 28px);
@@ -1021,6 +1057,18 @@ button:focus-visible {
   .profile-pin-support {
     margin-top: 18px;
     font-size: 16px;
+  }
+
+  .profile-pin-keypad {
+    grid-template-columns: repeat(3, 68px);
+    grid-auto-rows: 44px;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  .profile-pin-key {
+    border-radius: 8px;
+    font-size: 20px;
   }
 
   .profile-pin-forgot {
@@ -1822,9 +1870,8 @@ button:focus-visible {
   --modern-sidebar-pill-chip-start: 10px;
   --modern-sidebar-pill-chip-end: 24px;
   --modern-sidebar-pill-chip-gap: 18px;
-  background:
-    radial-gradient(120% 90% at 75% 8%, rgba(190, 40, 18, 0.26), transparent 45%), #06090e;
-  color: #f8fbff;
+  background: var(--bg-color);
+  color: var(--text-color);
   overflow: hidden;
 }
 
@@ -2288,10 +2335,10 @@ button:focus-visible {
 }
 
 .modern-sidebar-shell.blur-enabled .modern-sidebar-panel {
-  border-color: rgb(255 255 255 / 0.14);
+  border-color: rgb(var(--focus-color-rgb) / 0.14);
   background:
-    linear-gradient(180deg, rgba(16, 16, 16, 0.22), rgba(16, 16, 16, 0.22)),
-    linear-gradient(180deg, rgba(74, 79, 89, 0.839), rgba(63, 69, 79, 0.8), rgba(64, 71, 79, 0.776));
+    linear-gradient(180deg, rgb(var(--bg-elevated-rgb) / 0.32), rgb(var(--bg-elevated-rgb) / 0.32)),
+    linear-gradient(180deg, rgb(var(--card-bg-rgb) / 0.88), rgb(var(--bg-elevated-rgb) / 0.84));
   backdrop-filter: blur(0px) saturate(1);
   -webkit-backdrop-filter: blur(0px) saturate(1);
 }
@@ -2391,24 +2438,25 @@ button:focus-visible {
 }
 
 .modern-sidebar-nav-item.selected {
-  background: #fff;
-  color: #10151f;
+  background: var(--secondary-color);
+  color: var(--on-secondary);
 }
 
 .modern-sidebar-nav-item.focused {
-  background: rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.4) !important;
+  background: var(--focus-bg);
+  border-color: var(--focus-color) !important;
+  color: var(--text-color);
   transform: scale(1.06);
 }
 
 .modern-sidebar-nav-item.selected.focused {
-  background: #fff;
-  color: #10151f;
-  border-color: rgba(255, 255, 255, 0.4) !important;
+  background: var(--secondary-color);
+  color: var(--on-secondary);
+  border-color: var(--focus-color) !important;
 }
 
 .modern-sidebar-nav-item.selected.focused .modern-sidebar-nav-icon-circle {
-  background: #e7e2ef;
+  background: var(--secondary-color);
 }
 
 .modern-sidebar-nav-icon-circle,
@@ -2423,12 +2471,13 @@ button:focus-visible {
 }
 
 .modern-sidebar-nav-icon-circle {
-  background: #6a6a74;
+  background: var(--focus-bg);
   padding: 12px;
 }
 
 .modern-sidebar-nav-item.selected .modern-sidebar-nav-icon-circle {
-  background: #e7e2ef;
+  background: var(--secondary-color);
+  color: var(--on-secondary);
 }
 
 .modern-sidebar-nav-icon,
@@ -2534,10 +2583,10 @@ button:focus-visible {
 }
 
 .modern-sidebar-shell.blur-enabled .modern-sidebar-pill-chip {
-  border-color: rgb(255 255 255 / 0.14);
+  border-color: rgb(var(--focus-color-rgb) / 0.14);
   background:
-    linear-gradient(180deg, rgba(16, 16, 16, 0.18), rgba(16, 16, 16, 0.18)),
-    linear-gradient(180deg, rgba(66, 72, 81, 0.82), rgba(59, 65, 73, 0.78));
+    linear-gradient(180deg, rgb(var(--bg-elevated-rgb) / 0.28), rgb(var(--bg-elevated-rgb) / 0.28)),
+    linear-gradient(180deg, rgb(var(--card-bg-rgb) / 0.86), rgb(var(--bg-elevated-rgb) / 0.82));
 }
 
 .modern-sidebar-shell.performance-constrained.blur-enabled .modern-sidebar-panel,
@@ -2547,7 +2596,7 @@ button:focus-visible {
 }
 
 .modern-sidebar-pill-icon-wrap {
-  background: #4f555e;
+  background: var(--focus-bg);
   padding: 12px;
 }
 
@@ -8805,13 +8854,17 @@ button:focus-visible {
 }
 
 .settings-layout-preview-classic-row.is-featured {
-  top: calc(var(--settings-layout-classic-row-spacing) * 2 + var(--settings-layout-classic-row-height));
+  top: calc(
+    var(--settings-layout-classic-row-spacing) * 2 + var(--settings-layout-classic-row-height)
+  );
   animation: settingsLayoutClassicPreviewScroll 4s linear infinite;
   will-change: transform;
 }
 
 .settings-layout-preview-classic-row.is-bottom {
-  top: calc(var(--settings-layout-classic-row-spacing) * 3 + var(--settings-layout-classic-row-height) * 2);
+  top: calc(
+    var(--settings-layout-classic-row-spacing) * 3 + var(--settings-layout-classic-row-height) * 2
+  );
 }
 
 .settings-layout-card.focused .settings-layout-preview,
@@ -14229,7 +14282,7 @@ button:focus-visible {
   inset: 0;
   z-index: 0;
   opacity: 0;
-  transition: opacity 600ms ease;
+  transition: opacity 300ms ease;
   overflow: hidden;
 }
 
@@ -14455,7 +14508,7 @@ button:focus-visible {
   pointer-events: none;
 }
 
-.detail-trailer-manual .series-detail-content {
+.detail-trailer-manual.detail-trailer-ready .series-detail-content {
   pointer-events: none;
   opacity: 0;
 }
@@ -14592,7 +14645,8 @@ button:focus-visible {
     opacity 400ms ease;
 }
 
-.detail-trailer-autoplay.detail-trailer-ready .series-detail-title {
+.detail-trailer-autoplay.detail-trailer-ready .series-detail-title,
+.detail-trailer-manual.detail-trailer-ready .series-detail-title {
   max-height: 0;
   margin-bottom: 0;
   opacity: 0;
@@ -14628,7 +14682,7 @@ button:focus-visible {
     transform 400ms ease;
 }
 
-.detail-trailer-autoplay.detail-trailer-ready .detail-hero-body {
+.detail-trailer-active.detail-trailer-ready .detail-hero-body {
   max-height: 0;
   opacity: 0;
   transform: translateY(8px);
@@ -16125,13 +16179,30 @@ button:focus-visible {
 
 .performance-constrained .series-detail-backdrop,
 .performance-constrained .series-detail-vignette,
-.performance-constrained .detail-trailer-layer,
+.performance-constrained .series-detail-content {
+  transition-duration: 250ms !important;
+}
+
+/* Match the Android TV detail trailer motion even on TV runtimes. These are
+   opacity/size transitions and are cheap enough to retain on webOS/Tizen. */
+.performance-constrained .detail-trailer-layer {
+  transition-duration: 300ms !important;
+}
+
+.performance-constrained .series-detail-backdrop,
+.performance-constrained .series-detail-vignette {
+  transition-duration: 800ms !important;
+}
+
 .performance-constrained .series-detail-logo,
 .performance-constrained .series-detail-title,
 .performance-constrained .detail-trailer-hint,
-.performance-constrained .detail-hero-body,
-.performance-constrained .series-detail-content {
-  transition-duration: 250ms !important;
+.performance-constrained .detail-hero-body {
+  transition-duration: 600ms !important;
+}
+
+.performance-constrained .detail-trailer-manual .series-detail-content {
+  transition-duration: 400ms !important;
 }
 
 .performance-constrained .home-screen-shell .home-hero-backdrop {
@@ -16678,14 +16749,14 @@ button:focus-visible {
 
 .no-backdrop-filter .modern-sidebar-shell.blur-enabled .modern-sidebar-panel {
   background:
-    linear-gradient(180deg, rgba(22, 24, 28, 0.96), rgba(22, 24, 28, 0.96)),
-    linear-gradient(180deg, #4a4f59, #3f454f, #40474f);
+    linear-gradient(180deg, rgb(var(--bg-elevated-rgb) / 0.96), rgb(var(--bg-elevated-rgb) / 0.96)),
+    var(--bg-elevated);
 }
 
 .no-backdrop-filter .modern-sidebar-shell.blur-enabled .modern-sidebar-pill-chip {
   background:
-    linear-gradient(180deg, rgba(22, 24, 28, 0.92), rgba(22, 24, 28, 0.92)),
-    linear-gradient(180deg, #424851, #3b4149);
+    linear-gradient(180deg, rgb(var(--bg-elevated-rgb) / 0.92), rgb(var(--bg-elevated-rgb) / 0.92)),
+    var(--bg-elevated);
 }
 
 html.no-css-grid .qr-layout,
@@ -16807,9 +16878,8 @@ html.no-css-grid .cast-detail-meta {
 }
 
 .no-css-vars .home-shell {
-  background:
-    radial-gradient(120% 90% at 75% 8%, rgba(190, 40, 18, 0.26), transparent 45%), #06090e;
-  color: #f8fbff;
+  background: #0d0d0d;
+  color: #fff;
 }
 
 .no-css-vars .home-sidebar {

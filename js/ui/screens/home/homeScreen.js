@@ -1978,10 +1978,11 @@ function shouldDeferHomeRowImages(rowIndex = 0, rowKey = "", focusedRowKey = "")
 function buildLazyImageAttributes(src = "", { defer = false, highPriority = false } = {}) {
   const safeSrc = escapeAttribute(src);
   const priority = highPriority ? ' fetchpriority="high"' : "";
+  const loadingMode = Platform.isWebOS() || Platform.isTizen() ? "eager" : "lazy";
   if (defer) {
-    return `data-src="${safeSrc}" loading="lazy" decoding="async"${priority}`;
+    return `data-src="${safeSrc}" loading="${loadingMode}" decoding="async"${priority}`;
   }
-  return `src="${safeSrc}" loading="lazy" decoding="async"${priority}`;
+  return `src="${safeSrc}" loading="${loadingMode}" decoding="async"${priority}`;
 }
 
 export function createPosterCardMarkup(item, rowIndex, itemIndex, itemType, rowData = null, showLabels = true, layoutMode = "classic", isExpanded = false, preferLandscapePoster = false, deferImages = false) {
@@ -6449,6 +6450,7 @@ export const HomeScreen = {
     }
     if (!this.boundHomeViewportScrollHandler) {
       this.boundHomeViewportScrollHandler = () => {
+        this.scheduleHomeLazyImageHydration();
         if (this.shouldSuspendModernViewportFocusSync()) {
           return;
         }
@@ -7410,8 +7412,12 @@ export const HomeScreen = {
       if (!shouldHydrateFocusedRow && !isNearViewport) {
         return;
       }
-      image.src = src;
+      // The app already decides when an image is close enough to load. Leaving
+      // loading="lazy" here delegates that decision back to old TV browsers,
+      // which can miscalculate visibility inside the nested modern-home viewport.
+      image.loading = "eager";
       image.removeAttribute("data-src");
+      image.src = src;
     });
   },
 
@@ -7951,7 +7957,7 @@ export const HomeScreen = {
         description: settings.useBasicInfo ? (enriched.description || hero.description) : hero.description,
         background: settings.useArtwork ? (enriched.backdrop || hero.background) : hero.background,
         poster: settings.useArtwork ? (enriched.poster || hero.poster) : hero.poster,
-        logo: settings.useArtwork ? (enriched.logo || hero.logo) : hero.logo,
+        logo: settings.useArtwork ? enriched.logo : hero.logo,
         genres: settings.useBasicInfo ? (enriched.genres || hero.genres) : hero.genres,
         releaseInfo: settings.useBasicInfo ? (enriched.releaseInfo || hero.releaseInfo) : hero.releaseInfo
       }, hero.type || "movie");
@@ -8333,6 +8339,11 @@ export const HomeScreen = {
       cancelAnimationFrame(this.homeTruncationFrame);
       this.homeTruncationFrame = null;
     }
+    if (this.homeLazyImageHydrationRaf) {
+      cancelAnimationFrame(this.homeLazyImageHydrationRaf);
+      this.homeLazyImageHydrationRaf = 0;
+    }
+    this.pendingHomeLazyImageAnchor = null;
     this.homeTruncationScope = null;
     this.cachedModernPortraitPosterMetrics = null;
     this.cachedModernLandscapePosterMetrics = null;

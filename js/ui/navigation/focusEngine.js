@@ -259,6 +259,8 @@ export const FocusEngine = {
     if (!Platform.isWebOS()) {
       return;
     }
+    const currentScreen = Router.getCurrentScreen();
+    currentScreen?.onPointerMove?.(event);
     const target = this.getPointerFocusable(event);
     if (!target || target === this.lastPointerFocusTarget) {
       return;
