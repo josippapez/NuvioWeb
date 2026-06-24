@@ -16569,6 +16569,321 @@ button:focus-visible {
   font-size: 22px;
 }
 
+/* Player episode management mirrors the Android TV 520dp side panel.
+   Keep these values in CSS pixels: TV browsers already expose a TV-sized
+   viewport, so the previous 2x conversion made the panel and cards oversized. */
+.player-modal-backdrop.episodes-open {
+  background: rgba(0, 0, 0, 0.45);
+  transition: opacity 120ms ease;
+}
+
+.player-episode-panel,
+.legacy-webos .player-episode-panel {
+  top: 0;
+  right: 0;
+  width: 520px;
+  max-width: calc(100vw - 32px);
+  height: 100%;
+  padding: 24px;
+  border: 0;
+  border-radius: 16px 0 0 16px;
+  background: var(--player-background-elevated);
+  box-sizing: border-box;
+  transform: translateX(0);
+  opacity: 1;
+  transition:
+    transform 220ms ease,
+    opacity 120ms ease;
+}
+
+.player-episode-panel.is-entering,
+.player-episode-panel.is-exiting {
+  transform: translateX(100%);
+}
+
+.player-episode-panel-header,
+.legacy-webos .player-episode-panel-header {
+  gap: 12px;
+}
+
+.player-episode-panel-title,
+.legacy-webos .player-episode-panel-title {
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+}
+
+.player-episode-close-btn,
+.legacy-webos .player-episode-close-btn,
+.player-episode-stream-action {
+  min-width: 0;
+  height: 40px;
+  padding: 0 16px;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: var(--player-background-card);
+  color: var(--player-atv-text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.player-episode-close-btn.focused,
+.legacy-webos .player-episode-close-btn.focused,
+.player-episode-stream-action.focused {
+  border-color: var(--player-focus-ring);
+  background: var(--player-focus-background);
+  color: var(--player-atv-primary);
+  box-shadow: none;
+}
+
+.player-episode-season-tabs,
+.legacy-webos .player-episode-season-tabs {
+  margin-top: 16px;
+  gap: 12px;
+  padding: 4px;
+}
+
+.player-episode-season-tab,
+.legacy-webos .player-episode-season-tab,
+.player-episode-stream-filter {
+  height: 40px;
+  padding: 0 20px;
+  border: 1px solid var(--player-atv-border);
+  border-radius: 24px;
+  background: var(--player-background-card);
+  color: var(--player-atv-text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.player-episode-season-tab.selected,
+.legacy-webos .player-episode-season-tab.selected,
+.player-episode-stream-filter.selected {
+  border-color: transparent;
+  background: #f5f5f5;
+  color: #000;
+}
+
+.player-episode-season-tab.focused,
+.player-episode-season-tab.selected.focused,
+.legacy-webos .player-episode-season-tab.focused,
+.legacy-webos .player-episode-season-tab.selected.focused,
+.player-episode-stream-filter.focused,
+.player-episode-stream-filter.selected.focused {
+  border: 2px solid var(--player-focus-ring);
+  background: var(--player-secondary);
+  color: var(--player-on-secondary);
+  box-shadow: none;
+}
+
+.player-episode-list,
+.legacy-webos .player-episode-list {
+  margin-top: 16px;
+  padding: 4px 4px 16px;
+}
+
+.player-episode-panel.has-season-tabs .player-episode-list {
+  margin-top: 12px;
+}
+
+.player-episode-item,
+.legacy-webos .player-episode-item {
+  gap: 14px;
+  padding: 10px;
+  margin-bottom: 12px;
+  border: 2px solid transparent;
+  border-radius: 16px;
+  background: var(--player-background-card);
+}
+
+.player-episode-item.selected {
+  border-color: transparent;
+  background: var(--player-background-card);
+}
+
+.player-episode-item.focused,
+.player-episode-item.selected.focused {
+  border-color: var(--player-focus-ring);
+  background: var(--player-focus-background);
+  transform: scale(1.01);
+}
+
+.player-episode-thumb-wrap,
+.legacy-webos .player-episode-thumb-wrap {
+  width: 130px;
+  min-width: 130px;
+  height: 90px;
+  border-radius: 12px;
+}
+
+.player-episode-code,
+.legacy-webos .player-episode-code {
+  left: 8px;
+  bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.player-episode-current,
+.legacy-webos .player-episode-current {
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  font-size: 14px;
+}
+
+.player-episode-copy {
+  gap: 4px;
+}
+
+.player-episode-item-title,
+.legacy-webos .player-episode-item-title {
+  overflow: hidden;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-episode-date,
+.player-episode-item-subtitle,
+.legacy-webos .player-episode-date,
+.legacy-webos .player-episode-item-subtitle {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 0;
+  font-size: 12px;
+  line-height: 16px;
+  -webkit-box-orient: vertical;
+  text-overflow: ellipsis;
+}
+
+.player-episode-item-subtitle,
+.legacy-webos .player-episode-item-subtitle {
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.player-episode-stream-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.no-flex-gap .player-episode-stream-actions > * {
+  margin-right: 12px;
+}
+
+.no-flex-gap .player-episode-stream-actions > *:last-child {
+  margin-right: 0;
+}
+
+.player-episode-stream-meta {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--player-atv-text-secondary);
+  font-size: 16px;
+  line-height: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-episode-stream-filters {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.no-flex-gap .player-episode-stream-filters > * {
+  margin-right: 12px;
+}
+
+.no-flex-gap .player-episode-stream-filters > *:last-child {
+  margin-right: 0;
+}
+
+.player-episode-stream-filters::-webkit-scrollbar,
+.player-episode-stream-list::-webkit-scrollbar {
+  display: none;
+}
+
+.player-episode-stream-filter {
+  flex: 0 0 auto;
+}
+
+.player-episode-stream-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 16px;
+  padding: 4px 4px 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.player-episode-stream-card,
+.legacy-webos .player-episode-stream-card {
+  gap: 16px;
+  padding: 16px;
+  margin-bottom: 8px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: var(--player-background-elevated);
+}
+
+.player-episode-stream-card.focused,
+.legacy-webos .player-episode-stream-card.focused {
+  border: 2px solid var(--player-focus-ring);
+  background: var(--player-background-elevated);
+  transform: scale(1.04);
+}
+
+.player-episode-stream-card .player-source-title {
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.player-episode-stream-card .player-source-desc {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.player-episode-stream-card .player-source-logo {
+  width: 32px;
+  height: 32px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+}
+
+.player-episode-stream-card .player-source-addon {
+  max-width: 92px;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-episode-stream-empty {
+  padding: 24px 0;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 16px;
+  line-height: 24px;
+  text-align: center;
+}
+
 .legacy-webos .home-track > .home-content-card,
 .legacy-webos .home-modern-row .home-track > .home-content-card {
   margin-right: 20px;
@@ -19212,7 +19527,8 @@ html.no-css-grid .cast-detail-meta {
 
 .series-detail-actions {
   gap: var(--detail-action-gap);
-  margin-bottom: 36px;
+  padding: 6px;
+  margin: -6px -6px 30px;
 }
 
 .series-primary-btn {

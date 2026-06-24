@@ -257,17 +257,6 @@
             '<iframe id="yt" src="' +
             src +
             '" frameborder="0" allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe>';
-          var fallbackFrame = document.getElementById("yt");
-          if (fallbackFrame) {
-            fallbackFrame.addEventListener("load", function onFallbackLoaded() {
-              setTimeout(function reportFallbackFirstFrame() {
-                if (!firstFrameSent) {
-                  firstFrameSent = true;
-                  postToParent("firstFrame", { videoId: videoId, currentTime: 0 });
-                }
-              }, 250);
-            });
-          }
           postToParent("state", {
             state: {
               currentTime: 0,

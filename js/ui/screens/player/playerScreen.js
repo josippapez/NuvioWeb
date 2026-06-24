@@ -36,6 +36,7 @@ const LOADING_LOGO_FILL_FRAME_MS = 80;
 const NEXT_EPISODE_SOURCE_RESOLVE_TIMEOUT_MS = 45000;
 const STARTUP_AUDIO_PREFERENCE_RETRY_WINDOW_MS = 6000;
 const STARTUP_AUDIO_PREFERENCE_RETRY_INTERVAL_MS = 250;
+const EPISODE_PANEL_TRANSITION_MS = 220;
 const activeEngineFsPlaybackClaims = new Map();
 const deferredEngineFsRemovalTimers = new Map();
 
@@ -1815,6 +1816,15 @@ export const PlayerScreen = {
     this.episodePanelFocusZone = "episodes";
     this.episodePanelSeason = null;
     this.episodePanelSeasonIndex = 0;
+    this.episodePanelMode = "episodes";
+    this.episodePanelStreams = [];
+    this.episodePanelStreamsLoading = false;
+    this.episodePanelStreamsError = "";
+    this.episodePanelStreamFilter = "all";
+    this.episodePanelStreamFocus = { zone: "actions", index: 0 };
+    this.episodePanelStreamVideoId = "";
+    this.episodePanelStreamLoadToken = 0;
+    this.episodePanelExitTimer = null;
     this.switchingEpisode = false;
 
     this.seekOverlayVisible = false;
@@ -6041,6 +6051,7 @@ export const PlayerScreen = {
     }
     const hasModal = this.subtitleDialogVisible || this.audioDialogVisible || this.sourcesPanelVisible || this.episodePanelVisible || this.speedDialogVisible;
     modalBackdrop.classList.toggle("hidden", !hasModal);
+    modalBackdrop.classList.toggle("episodes-open", Boolean(this.episodePanelVisible));
     controlsOverlay?.classList.toggle("modal-blocked", hasModal);
   },
 
@@ -12613,6 +12624,9 @@ export const PlayerScreen = {
       return;
     }
     this.episodePanelVisible = true;
+    this.episodePanelMode = "episodes";
+    this.episodePanelStreamsError = "";
+    this.episodePanelStreamsLoading = false;
     this.subtitleDialogVisible = false;
     this.audioDialogVisible = false;
     this.speedDialogVisible = false;
@@ -12639,15 +12653,18 @@ export const PlayerScreen = {
       seen.add(season);
       seasons.push(season);
     });
-    seasons.sort((left, right) => left - right);
-    return seasons;
+    const regular = seasons.filter((season) => season > 0).sort((left, right) => left - right);
+    const specials = seasons.filter((season) => season === 0);
+    return [...regular, ...specials];
   },
 
   getEpisodePanelSeasonLabel(season) {
     if (!Number.isFinite(Number(season))) {
       return t("episodes_panel_title", {}, "Episodes");
     }
-    return `${t("episodes_season", {}, "Season")} ${Number(season)}`;
+    return Number(season) === 0
+      ? t("episodes_specials", {}, "Specials")
+      : `${t("episodes_season", {}, "Season")} ${Number(season)}`;
   },
 
   syncEpisodePanelSeasonToIndex() {
@@ -12711,6 +12728,176 @@ export const PlayerScreen = {
     this.renderEpisodePanel();
   },
 
+  getEpisodePanelStreamFilters() {
+    const addons = [];
+    (this.episodePanelStreams || []).forEach((stream) => {
+      const addonName = String(stream?.addonName || "").trim();
+      if (addonName && !addons.includes(addonName)) {
+        addons.push(addonName);
+      }
+    });
+    return ["all", ...addons];
+  },
+
+  getFilteredEpisodePanelStreams() {
+    const streams = Array.isArray(this.episodePanelStreams) ? this.episodePanelStreams : [];
+    if (this.episodePanelStreamFilter === "all") {
+      return streams;
+    }
+    return streams.filter(
+      (stream) => String(stream?.addonName || "") === this.episodePanelStreamFilter
+    );
+  },
+
+  closeEpisodeStreamsView() {
+    this.episodePanelMode = "episodes";
+    this.episodePanelStreamsLoading = false;
+    this.episodePanelStreamsError = "";
+    this.episodePanelFocusZone = "episodes";
+    this.renderEpisodePanel();
+  },
+
+  async openEpisodeStreamsView({ forceReload = true } = {}) {
+    const selected = this.episodes[this.episodePanelIndex] || null;
+    if (!selected?.id) {
+      return;
+    }
+    this.episodePanelMode = "streams";
+    this.episodePanelStreamVideoId = String(selected.id);
+    this.episodePanelStreamFilter = "all";
+    this.episodePanelStreamFocus = { zone: "actions", index: 0 };
+    this.episodePanelStreamsError = "";
+    this.episodePanelStreamsLoading = true;
+    this.renderEpisodePanel();
+
+    const itemType = this.params?.itemType || "series";
+    const cacheKey = this.getStreamCacheKey(selected.id, normalizeItemType(itemType));
+    if (forceReload) {
+      this.streamCandidatesByVideoId?.delete?.(cacheKey);
+    }
+    const token = Number(this.episodePanelStreamLoadToken || 0) + 1;
+    this.episodePanelStreamLoadToken = token;
+    try {
+      const streams = await this.getPlayableStreamsForVideo(selected.id, itemType);
+      if (
+        token !== this.episodePanelStreamLoadToken ||
+        !this.episodePanelVisible ||
+        this.episodePanelMode !== "streams" ||
+        String(this.episodePanelStreamVideoId || "") !== String(selected.id)
+      ) {
+        return;
+      }
+      this.episodePanelStreams = streams;
+      this.episodePanelStreamsLoading = false;
+      this.episodePanelStreamFocus = streams.length
+        ? { zone: "streams", index: 0 }
+        : { zone: "actions", index: 0 };
+    } catch (_error) {
+      if (token !== this.episodePanelStreamLoadToken) {
+        return;
+      }
+      this.episodePanelStreams = [];
+      this.episodePanelStreamsLoading = false;
+      this.episodePanelStreamsError = t(
+        "panel_failed_load_streams",
+        {},
+        "Failed to load streams"
+      );
+      this.episodePanelStreamFocus = { zone: "actions", index: 0 };
+    }
+    this.renderEpisodePanel();
+  },
+
+  moveEpisodeStreamFocus(direction) {
+    const filters = this.getEpisodePanelStreamFilters();
+    const streams = this.getFilteredEpisodePanelStreams();
+    const focus = this.episodePanelStreamFocus || { zone: "actions", index: 0 };
+    let index = Number(focus.index || 0);
+
+    if (focus.zone === "close") {
+      if (direction === "down") {
+        this.episodePanelStreamFocus = { zone: "actions", index: 0 };
+      }
+      return;
+    }
+    if (focus.zone === "actions") {
+      if (direction === "left" || direction === "right") {
+        this.episodePanelStreamFocus = {
+          zone: "actions",
+          index: clamp(index + (direction === "right" ? 1 : -1), 0, 1)
+        };
+      } else if (direction === "up") {
+        this.episodePanelStreamFocus = { zone: "close", index: 0 };
+      } else if (direction === "down") {
+        this.episodePanelStreamFocus = filters.length
+          ? { zone: "filters", index: clamp(filters.indexOf(this.episodePanelStreamFilter), 0, filters.length - 1) }
+          : { zone: "streams", index: 0 };
+      }
+      return;
+    }
+    if (focus.zone === "filters") {
+      if (direction === "left" || direction === "right") {
+        this.episodePanelStreamFocus = {
+          zone: "filters",
+          index: clamp(index + (direction === "right" ? 1 : -1), 0, Math.max(0, filters.length - 1))
+        };
+      } else if (direction === "up") {
+        this.episodePanelStreamFocus = { zone: "actions", index: 0 };
+      } else if (direction === "down" && streams.length) {
+        this.episodePanelStreamFocus = { zone: "streams", index: 0 };
+      }
+      return;
+    }
+    if (focus.zone === "streams") {
+      if (direction === "up") {
+        this.episodePanelStreamFocus =
+          index > 0
+            ? { zone: "streams", index: index - 1 }
+            : { zone: "filters", index: clamp(filters.indexOf(this.episodePanelStreamFilter), 0, Math.max(0, filters.length - 1)) };
+      } else if (direction === "down") {
+        this.episodePanelStreamFocus = {
+          zone: "streams",
+          index: clamp(index + 1, 0, Math.max(0, streams.length - 1))
+        };
+      }
+    }
+  },
+
+  async activateEpisodeStreamFocus() {
+    const focus = this.episodePanelStreamFocus || { zone: "actions", index: 0 };
+    if (focus.zone === "close") {
+      this.hideEpisodePanel();
+      return;
+    }
+    if (focus.zone === "actions") {
+      if (Number(focus.index || 0) === 0) {
+        this.closeEpisodeStreamsView();
+      } else {
+        await this.openEpisodeStreamsView({ forceReload: true });
+      }
+      return;
+    }
+    if (focus.zone === "filters") {
+      const filters = this.getEpisodePanelStreamFilters();
+      this.episodePanelStreamFilter =
+        filters[clamp(Number(focus.index || 0), 0, Math.max(0, filters.length - 1))] ||
+        "all";
+      this.episodePanelStreamFocus = {
+        zone: "filters",
+        index: Math.max(0, filters.indexOf(this.episodePanelStreamFilter))
+      };
+      this.renderEpisodePanel();
+      return;
+    }
+    const streams = this.getFilteredEpisodePanelStreams();
+    const selectedStream =
+      streams[clamp(Number(focus.index || 0), 0, Math.max(0, streams.length - 1))] ||
+      null;
+    if (selectedStream) {
+      await this.playEpisodeFromPanel(selectedStream);
+    }
+  },
+
   handleEpisodePanelKey(event) {
     if (!this.episodePanelVisible) {
       return false;
@@ -12723,6 +12910,23 @@ export const PlayerScreen = {
     event?.preventDefault?.();
     event?.stopPropagation?.();
     event?.stopImmediatePropagation?.();
+
+    if (this.episodePanelMode === "streams") {
+      if (keyCode === 37) {
+        this.moveEpisodeStreamFocus("left");
+      } else if (keyCode === 38) {
+        this.moveEpisodeStreamFocus("up");
+      } else if (keyCode === 39) {
+        this.moveEpisodeStreamFocus("right");
+      } else if (keyCode === 40) {
+        this.moveEpisodeStreamFocus("down");
+      } else if (isSelectKeyCode(keyCode)) {
+        void this.activateEpisodeStreamFocus();
+        return true;
+      }
+      this.renderEpisodePanel();
+      return true;
+    }
 
     const seasons = this.getEpisodePanelSeasons();
     const hasSeasonTabs = seasons.length > 1;
@@ -12795,6 +12999,8 @@ export const PlayerScreen = {
     selected?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
     const focusedSeason = panel.querySelector(".player-episode-season-tab.focused");
     focusedSeason?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    const focusedStream = panel.querySelector(".player-episode-stream-card.focused");
+    focusedStream?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
     try {
       const focused = panel.querySelector(".focused");
       focused?.focus?.({ preventScroll: true });
@@ -12803,8 +13009,109 @@ export const PlayerScreen = {
     }
   },
 
+  renderEpisodeStreamsView() {
+    const selectedEpisode = this.episodes[this.episodePanelIndex] || null;
+    const filters = this.getEpisodePanelStreamFilters();
+    const streams = this.getFilteredEpisodePanelStreams();
+    const focus = this.episodePanelStreamFocus || { zone: "actions", index: 0 };
+    const badgeSettings = StreamBadgeSettingsStore.snapshot();
+    const badgePlacement = resolvePlayerSourceBadgePlacement(badgeSettings);
+    const episodeCode = episodeDisplayCode(selectedEpisode);
+    const episodeTitle = String(
+      selectedEpisode?.title || t("episodes_episode", {}, "Episode")
+    ).trim();
+
+    return `
+      <div class="player-episode-stream-actions">
+        <button type="button"
+                class="player-episode-stream-action focusable${focus.zone === "actions" && focus.index === 0 ? " focused" : ""}"
+                data-episode-stream-action="back">
+          ${escapeHtml(t("episodes_panel_back", {}, "Back"))}
+        </button>
+        <button type="button"
+                class="player-episode-stream-action focusable${focus.zone === "actions" && focus.index === 1 ? " focused" : ""}"
+                data-episode-stream-action="reload">
+          ${escapeHtml(t("episodes_panel_reload", {}, "Reload"))}
+        </button>
+        <div class="player-episode-stream-meta">
+          ${escapeHtml([episodeCode, episodeTitle].filter(Boolean).join(" • "))}
+        </div>
+      </div>
+
+      ${
+        !this.episodePanelStreamsLoading && filters.length > 1
+          ? `<div class="player-episode-stream-filters">
+              ${filters
+                .map((filter, index) => {
+                  const selected = this.episodePanelStreamFilter === filter;
+                  const focused = focus.zone === "filters" && focus.index === index;
+                  return `
+                    <button type="button"
+                            class="player-episode-stream-filter focusable${selected ? " selected" : ""}${focused ? " focused" : ""}"
+                            data-episode-stream-filter-index="${index}">
+                      ${escapeHtml(filter === "all" ? t("subtitle_all", {}, "All") : filter)}
+                    </button>
+                  `;
+                })
+                .join("")}
+            </div>`
+          : ""
+      }
+
+      <div class="player-episode-stream-list">
+        ${
+          this.episodePanelStreamsLoading
+            ? `<div class="player-episode-stream-empty">${escapeHtml(t("stream_finding_source", {}, "Finding stream source"))}</div>`
+            : ""
+        }
+        ${
+          this.episodePanelStreamsError
+            ? `<div class="player-episode-stream-empty">${escapeHtml(this.episodePanelStreamsError)}</div>`
+            : ""
+        }
+        ${
+          !this.episodePanelStreamsLoading &&
+          !this.episodePanelStreamsError &&
+          !streams.length
+            ? `<div class="player-episode-stream-empty">${escapeHtml(t("sources_no_streams", {}, "No streams found"))}</div>`
+            : streams
+                .map((stream, index) => {
+                  const focused = focus.zone === "streams" && focus.index === index;
+                  const badges = renderPlayerSourceBadges(stream, badgeSettings);
+                  const topBadges = badgePlacement === "TOP" ? badges : "";
+                  const bottomBadges = badgePlacement === "BOTTOM" ? badges : "";
+                  const addonLogoUrl = normalizeImageUrl(stream.addonLogo);
+                  return `
+                    <article class="player-source-card player-episode-stream-card focusable${focused ? " focused" : ""}"
+                             data-episode-stream-index="${index}">
+                      <div class="player-source-main">
+                        ${topBadges}
+                        <div class="player-source-title">${escapeHtml(stream.label || "Stream")}</div>
+                        <div class="player-source-desc">${escapeHtml(stream.description || stream.addonName || "")}</div>
+                        ${bottomBadges}
+                      </div>
+                      <div class="player-source-side">
+                        ${addonLogoUrl ? `<img class="player-source-logo" src="${escapeAttribute(addonLogoUrl)}" alt="" decoding="async" loading="lazy" />` : ""}
+                        <div class="player-source-addon">${escapeHtml(stream.addonName || t("nav_addons", {}, "Addon"))}</div>
+                      </div>
+                    </article>
+                  `;
+                })
+                .join("")
+        }
+      </div>
+    `;
+  },
+
   renderEpisodePanel() {
-    this.container.querySelector("#episodeSidePanel")?.remove();
+    if (this.episodePanelExitTimer) {
+      clearTimeout(this.episodePanelExitTimer);
+      this.episodePanelExitTimer = null;
+    }
+    const existingPanel = this.container.querySelector("#episodeSidePanel");
+    const shouldAnimateEntry =
+      !existingPanel || existingPanel.classList.contains("is-exiting");
+    existingPanel?.remove();
     if (!this.episodePanelVisible) {
       return;
     }
@@ -12815,6 +13122,7 @@ export const PlayerScreen = {
     this.syncEpisodePanelSeasonToIndex();
     const seasons = this.getEpisodePanelSeasons();
     const hasSeasonTabs = seasons.length > 1;
+    panel.classList.toggle("has-season-tabs", hasSeasonTabs);
     const focusedZone = this.episodePanelFocusZone || "episodes";
     const seasonTabs = hasSeasonTabs
       ? `<div class="player-episode-season-tabs">
@@ -12859,30 +13167,52 @@ export const PlayerScreen = {
       `;
     }).join("");
 
+    const isStreamsView = this.episodePanelMode === "streams";
+    const streamFocus = this.episodePanelStreamFocus || { zone: "actions", index: 0 };
     panel.innerHTML = `
       <div class="player-episode-panel-header">
-        <div class="player-episode-panel-title">${escapeHtml(t("episodes_panel_title", {}, "Episodes"))}</div>
-        <button type="button" class="player-episode-close-btn focusable${focusedZone === "close" ? " focused" : ""}" tabindex="-1" data-episode-action="close">
+        <div class="player-episode-panel-title">${escapeHtml(isStreamsView ? t("episodes_panel_streams_title", {}, "Streams") : t("episodes_panel_title", {}, "Episodes"))}</div>
+        <button type="button" class="player-episode-close-btn focusable${isStreamsView ? (streamFocus.zone === "close" ? " focused" : "") : (focusedZone === "close" ? " focused" : "")}" tabindex="-1" data-episode-action="close">
           ${escapeHtml(t("episodes_panel_close", {}, "Close"))}
         </button>
       </div>
-      ${seasonTabs}
-      <div class="player-episode-list">
-        ${cards}
-      </div>
+      ${
+        isStreamsView
+          ? this.renderEpisodeStreamsView()
+          : `${seasonTabs}
+             <div class="player-episode-list">${cards}</div>`
+      }
     `;
     this.container.appendChild(panel);
+    if (shouldAnimateEntry) {
+      panel.classList.add("is-entering");
+      const finishEntry = () => panel.classList.remove("is-entering");
+      if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(() => requestAnimationFrame(finishEntry));
+      } else {
+        setTimeout(finishEntry, 32);
+      }
+    }
     this.scrollEpisodePanelIntoView();
   },
 
   hideEpisodePanel() {
     this.episodePanelVisible = false;
-    this.container?.querySelector("#episodeSidePanel")?.remove();
+    this.episodePanelStreamLoadToken = Number(this.episodePanelStreamLoadToken || 0) + 1;
+    const panel = this.container?.querySelector("#episodeSidePanel");
+    panel?.classList.add("is-exiting");
+    if (this.episodePanelExitTimer) {
+      clearTimeout(this.episodePanelExitTimer);
+    }
+    this.episodePanelExitTimer = setTimeout(() => {
+      panel?.remove();
+      this.episodePanelExitTimer = null;
+    }, EPISODE_PANEL_TRANSITION_MS);
     this.updateModalBackdrop();
     this.resetControlsAutoHide();
   },
 
-  async playEpisodeFromPanel() {
+  async playEpisodeFromPanel(selectedStream = null) {
     if (this.switchingEpisode || !this.episodes.length) {
       return;
     }
@@ -12890,14 +13220,21 @@ export const PlayerScreen = {
     if (!selected?.id) {
       return;
     }
+    if (!selectedStream && this.episodePanelMode !== "streams") {
+      await this.openEpisodeStreamsView({ forceReload: true });
+      return;
+    }
     this.switchingEpisode = true;
     try {
       const itemType = this.params?.itemType || "series";
-      const streamItems = await this.getPlayableStreamsForVideo(selected.id, itemType);
+      const streamItems = selectedStream
+        ? this.episodePanelStreams
+        : await this.getPlayableStreamsForVideo(selected.id, itemType);
       if (!streamItems.length) {
         return;
       }
-      const bestStreamCandidate = this.selectBestStreamCandidate(streamItems) || streamItems[0];
+      const bestStreamCandidate =
+        selectedStream || this.selectBestStreamCandidate(streamItems) || streamItems[0];
       const bestStream = bestStreamCandidate?.url || bestStreamCandidate?.externalUrl || null;
       const nextEpisode = this.episodes[this.episodePanelIndex + 1] || null;
       await PlayerController.flushCurrentProgress({ allowCloudSync: false });
@@ -13212,7 +13549,38 @@ export const PlayerScreen = {
 
     const episodeCloseNode = target?.closest?.("[data-episode-action='close']");
     if (episodeCloseNode && this.episodePanelVisible) {
-      this.episodePanelFocusZone = "close";
+      if (this.episodePanelMode === "streams") {
+        this.episodePanelStreamFocus = { zone: "close", index: 0 };
+      } else {
+        this.episodePanelFocusZone = "close";
+      }
+      return;
+    }
+
+    const episodeStreamAction = target?.closest?.("[data-episode-stream-action]");
+    if (episodeStreamAction && this.episodePanelVisible) {
+      this.episodePanelStreamFocus = {
+        zone: "actions",
+        index: episodeStreamAction.dataset.episodeStreamAction === "reload" ? 1 : 0
+      };
+      return;
+    }
+
+    const episodeStreamFilter = target?.closest?.("[data-episode-stream-filter-index]");
+    if (episodeStreamFilter && this.episodePanelVisible) {
+      this.episodePanelStreamFocus = {
+        zone: "filters",
+        index: Number(episodeStreamFilter.dataset.episodeStreamFilterIndex || 0)
+      };
+      return;
+    }
+
+    const episodeStreamNode = target?.closest?.("[data-episode-stream-index]");
+    if (episodeStreamNode && this.episodePanelVisible) {
+      this.episodePanelStreamFocus = {
+        zone: "streams",
+        index: Number(episodeStreamNode.dataset.episodeStreamIndex || 0)
+      };
       return;
     }
 
@@ -13342,6 +13710,24 @@ export const PlayerScreen = {
       return true;
     }
 
+    const episodeStreamAction = target.closest?.("[data-episode-stream-action]");
+    if (episodeStreamAction && this.episodePanelVisible) {
+      await this.activateEpisodeStreamFocus();
+      return true;
+    }
+
+    const episodeStreamFilter = target.closest?.("[data-episode-stream-filter-index]");
+    if (episodeStreamFilter && this.episodePanelVisible) {
+      await this.activateEpisodeStreamFocus();
+      return true;
+    }
+
+    const episodeStreamNode = target.closest?.("[data-episode-stream-index]");
+    if (episodeStreamNode && this.episodePanelVisible) {
+      await this.activateEpisodeStreamFocus();
+      return true;
+    }
+
     const episodeSeasonNode = target.closest?.("[data-episode-season-index]");
     if (episodeSeasonNode && this.episodePanelVisible) {
       this.episodePanelFocusZone = "episodes";
@@ -13418,7 +13804,11 @@ export const PlayerScreen = {
     }
 
     if (this.episodePanelVisible) {
-      this.hideEpisodePanel();
+      if (this.episodePanelMode === "streams") {
+        this.closeEpisodeStreamsView();
+      } else {
+        this.hideEpisodePanel();
+      }
       return true;
     }
 

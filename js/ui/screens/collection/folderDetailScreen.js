@@ -1083,7 +1083,8 @@ export const FolderDetailScreen = {
       : `<div class="seeall-empty">${escapeFolderHtml(selectedTab?.error || "No items available.")}</div>`;
 
     const rowsMarkup = sourceRows.map((tab, index) => {
-      const mediaTypeLabel = String(tab.source?.mediaType || "MOVIE").toUpperCase() === "TV" ? "Series" : "Movie";
+      const mediaTypeLabel =
+        sourceType(tab.source || {}) === "series" ? "Series" : "Movie";
       const rowTitle = tab.label !== mediaTypeLabel ? `${tab.label} - ${mediaTypeLabel}` : tab.label;
       const rowCards = (tab.items || []).map((item, itemIndex) => `
         <article class="seeall-card focusable"
