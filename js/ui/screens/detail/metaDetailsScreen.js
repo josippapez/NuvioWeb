@@ -8154,7 +8154,12 @@ export const MetaDetailsScreen = {
       }
       if (direction === "up" || direction === "down") {
         event?.preventDefault?.();
-        this.setTrailerMutedState(!this.trailerMuted);
+        if (direction === "down") {
+          this.stopTrailerControlsTimer();
+          this.setTrailerControlsVisible(false);
+        } else {
+          this.restartTrailerControlsTimer();
+        }
         return;
       }
     } else if (!this.isTrailerPlaying) {
